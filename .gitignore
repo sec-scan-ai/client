@@ -1,0 +1,5 @@
+sec-scan
+sec-scan-*
+coverage.out
+coverage.html
+.claude/
