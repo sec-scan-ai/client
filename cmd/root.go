@@ -29,7 +29,13 @@ func NewRootCmd() *cobra.Command {
 		Use:   "sec-scan [flags] <path>",
 		Short: "PHP security scanner - scans files for vulnerabilities",
 		Long:  "Collects PHP files, computes checksums, and sends them to the sec-scan API for security analysis.",
-		Args:  cobra.ExactArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				cmd.Help()
+				os.Exit(0)
+			}
+			return cobra.ExactArgs(1)(cmd, args)
+		},
 		Version: fmt.Sprintf("%s (built %s)", Version, BuildTime),
 		SilenceUsage:  true,
 		SilenceErrors: true,
