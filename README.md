@@ -27,13 +27,6 @@ This auto-detects your OS and architecture, downloads the latest binary, and ins
 
 **Windows:** Download `sec-scan-windows-amd64.exe` from the [releases page](https://github.com/sec-scan-ai/client/releases) and add it to your PATH.
 
-**Build from source** (requires Go 1.23+):
-
-```bash
-git clone https://github.com/sec-scan-ai/client.git sec-scan
-cd sec-scan && make build
-```
-
 ## Setup
 
 On first run, sec-scan will create `~/.sec-scan/` and prompt you for your API token. You can get a token from your account at [sec-scan.ai](https://sec-scan.ai).
