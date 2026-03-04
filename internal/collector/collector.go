@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 const MaxFileSize = 500_000
@@ -79,25 +80,42 @@ func CollectPHPFiles(target string, excludes []string, followSymlinks bool) ([]P
 	return files, err
 }
 
+// sanitizeUTF8 replaces invalid UTF-8 bytes with the Unicode replacement
+// character (U+FFFD), matching what Go's json.Marshal does during encoding.
+// This ensures checksums computed from the sanitized string match what the
+// server sees after JSON decoding.
+func sanitizeUTF8(data []byte) string {
+	return strings.ToValidUTF8(string(data), string(utf8.RuneError))
+}
+
 // ReadContent reads file content, truncating at MaxFileSize.
+// Invalid UTF-8 bytes are replaced with U+FFFD to match JSON encoding behavior.
 func ReadContent(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
-	if len(data) > MaxFileSize {
-		return string(data[:MaxFileSize]) + "\n... [truncated]", nil
+	truncated := len(data) > MaxFileSize
+	if truncated {
+		data = data[:MaxFileSize]
 	}
-	return string(data), nil
+	content := sanitizeUTF8(data)
+	if truncated {
+		content += "\n... [truncated]"
+	}
+	return content, nil
 }
 
-// FileChecksum computes the SHA256 hex digest of a file's contents.
+// FileChecksum computes the SHA256 hex digest of a file's UTF-8-sanitized contents.
+// Uses sanitizeUTF8 so the hash matches what the server computes from the
+// JSON-decoded content string.
 func FileChecksum(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%x", sha256.Sum256(data)), nil
+	content := sanitizeUTF8(data)
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(content))), nil
 }
 
 type inode struct {
