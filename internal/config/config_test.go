@@ -105,7 +105,7 @@ func TestValidate_RequiredFields(t *testing.T) {
 		},
 		{
 			name:   "valid config",
-			config: Config{Token: "sc_test", Path: "/tmp", FailOn: "low", Output: "text", BatchSize: 10, Server: "http://localhost:3000"},
+			config: Config{Token: "sc_test", Path: "/tmp", FailOn: "low", Output: "text", BatchSize: 10, Server: "https://sec-scan.ai"},
 		},
 	}
 
@@ -190,11 +190,11 @@ func TestValidate_OutputFormats(t *testing.T) {
 }
 
 func TestValidate_StripTrailingSlash(t *testing.T) {
-	c := Config{Token: "sc_test", Path: "/tmp", FailOn: "low", Output: "text", BatchSize: 10, Server: "http://localhost:3000/"}
+	c := Config{Token: "sc_test", Path: "/tmp", FailOn: "low", Output: "text", BatchSize: 10, Server: "https://sec-scan.ai/"}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if c.Server != "http://localhost:3000" {
+	if c.Server != "https://sec-scan.ai" {
 		t.Errorf("Server = %q, want trailing slash stripped", c.Server)
 	}
 }

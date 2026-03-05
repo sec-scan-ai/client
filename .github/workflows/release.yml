@@ -33,21 +33,32 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o sec-scan-linux-arm64 .
           GOOS=windows GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o sec-scan-windows-amd64.exe .
 
+      - name: Build release body
+        run: |
+          cat > release-body.md << 'HEADER'
+          ## Install
+
+          **macOS / Linux:**
+          ```bash
+          curl -fsSL https://raw.githubusercontent.com/sec-scan-ai/client/main/install.sh | sh
+          ```
+
+          **Windows:** Download `sec-scan-windows-amd64.exe` below and add it to your PATH.
+
+          HEADER
+
+          # Extract the latest version section from CHANGELOG.md
+          # Takes everything between the first ## heading and the second one
+          if [ -f CHANGELOG.md ]; then
+            awk '/^## /{if(found) exit; found=1; next} found{print}' CHANGELOG.md >> release-body.md
+          else
+            echo "No changelog entry found." >> release-body.md
+          fi
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
-          body: |
-            ## Install
-
-            **macOS / Linux:**
-            ```bash
-            curl -fsSL https://raw.githubusercontent.com/sec-scan-ai/client/main/install.sh | sh
-            ```
-
-            **Windows:** Download `sec-scan-windows-amd64.exe` below and add it to your PATH.
-
-            ## Changes
+          body_path: release-body.md
           files: |
             sec-scan-darwin-arm64
             sec-scan-darwin-amd64
