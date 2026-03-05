@@ -40,10 +40,11 @@ Quick smoke test: `./sec-scan test-files/`
 - **Never use em-dashes**. Always use a regular hyphen/dash (-) instead. This applies to all code, copy, comments, and documentation.
 
 ## Release Workflow
-1. Add a new `## vX.Y.Z` section at the top of `CHANGELOG.md` with release notes
-2. Commit, tag (`vX.Y.Z`), push - the CI workflow extracts the latest section from `CHANGELOG.md` and uses it as the GitHub release body automatically
+- **Never create releases on your own** - only when the user explicitly asks for one
+- To see what changed since the last release: `git log <last-tag>..HEAD --oneline` and `git diff <last-tag>..HEAD`
+- Write a new `## vX.Y.Z` section at the top of `CHANGELOG.md` summarizing those changes
+- Commit, tag (`vX.Y.Z`), push - the CI workflow extracts the latest section from `CHANGELOG.md` and uses it as the GitHub release body automatically
 - `CHANGELOG.md` is the single source of truth for release notes - no separate file to keep in sync
-- **IMPORTANT**: Always check that `CHANGELOG.md` has an entry for the new version before tagging - if the latest section doesn't match the tag, remind the user to write changelog notes first
 
 ## Testing
 - Build: `make build` / Test: `make test` / Cross-compile: `make all`
