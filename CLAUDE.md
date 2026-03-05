@@ -11,20 +11,23 @@ Go CLI client for the sec-scan.ai PHP security scanner. Collects PHP files from 
 - Module path: `github.com/sec-scan-ai/client`
 
 ## Client-Server Protocol
-1. `POST /api/files/lookup` - `{checksums: [...]}` -> `{results: {hash: {secure, risk, details}}, unknown: [...]}`
-2. `POST /api/files/analyze` - `{files: [{checksum, path, size, content}...], framework: "..."}` -> `{results: {...}}`
-3. Auth: `Authorization: Bearer sc_<base64>` header
-4. Analyze sends 1 file per request, `--batch-size` controls parallel concurrency
-5. Lookup batched at 500 checksums per request
-6. `--force` skips lookup, sends all files for re-analysis
+1. `GET /api/frameworks/{name}` -> default excludes for the framework (cached locally 24h)
+2. `POST /api/files/lookup` -> cached results + unknown checksums (batched at 500)
+3. `POST /api/files/analyze` -> analysis results (1 file per request, `--batch-size` controls concurrency)
+4. Auth: `Authorization: Bearer sc_<base64>` header
+5. `--force` skips lookup, sends all files for re-analysis
 
 ## Key Design Decisions
+- Framework detection prefers `composer.lock` (exact versions) over `composer.json` (version constraints), walks up from scan dir only (no walk-down)
+- Server provides default exclude dirs per framework (cache dirs, compiled templates) - fetched once and cached 24h in `~/.sec-scan/framework-cache.json`
+- `vendor/` is never in default excludes - plugins/extensions installed via Composer must be scanned
 - Excludes match relative paths from scan root (not directory names globally) - security choice to prevent attackers hiding webshells in known-excluded directory names
 - Symlinks followed by default with inode-based loop detection (`--no-follow-symlinks` to disable)
 - Graceful Ctrl+C: stops dispatching new requests, waits for in-flight ones, shows partial results
 - Auto-cancels on 401 (auth failure) and 429 (rate limit) to avoid wasting requests
 - Per-request context timeouts (not shared http.Client.Timeout) for concurrency safety
 - First-run setup creates `~/.sec-scan/` and prompts for API token
+- `SEC_SCAN_SERVER` env var exists for internal/dev use but is undocumented - default is always `https://sec-scan.ai`
 
 ## Test Files (`test-files/`)
 - `clean.php` - no vulnerabilities (should be flagged clean)
@@ -36,6 +39,8 @@ Quick smoke test: `./sec-scan test-files/`
 ## Style
 - **Never use em-dashes**. Always use a regular hyphen/dash (-) instead. This applies to all code, copy, comments, and documentation.
 
-## Development Notes
-- The sec-scan API must be running for the client to work.
+## Testing
 - Build: `make build` / Test: `make test` / Cross-compile: `make all`
+- `cmd/root_test.go` uses a mock HTTP server (`httptest.NewServer`) for integration tests - any changes to the API client or endpoints require updating the mock server handlers there
+- Smoke test: `./sec-scan test-files/` (requires API to be running)
+- Dry run test: `./sec-scan --dry-run test-files/` (requires token but does not analyze)

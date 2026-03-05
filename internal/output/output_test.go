@@ -1,6 +1,10 @@
 package output
 
 import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/sec-scan-ai/client/internal/api"
@@ -110,6 +114,212 @@ func TestBuildSummary_RiskSorting(t *testing.T) {
 			t.Errorf("InsecureFiles[%d].RiskStr = %q, want %q", i, summary.InsecureFiles[i].RiskStr, expected)
 		}
 	}
+}
+
+func TestRenderText_AllClean(t *testing.T) {
+	summary := ScanSummary{
+		TotalFiles:  3,
+		UniqueFiles: 3,
+		SecureCount: 3,
+	}
+
+	out := captureStdout(t, func() { RenderText(summary) })
+
+	if !strings.Contains(out, "Total files:    3") {
+		t.Errorf("expected total files count, got:\n%s", out)
+	}
+	if !strings.Contains(out, "All files are clean.") {
+		t.Errorf("expected 'All files are clean.' message, got:\n%s", out)
+	}
+}
+
+func TestRenderText_WithInsecure(t *testing.T) {
+	summary := ScanSummary{
+		TotalFiles:    2,
+		UniqueFiles:   2,
+		SecureCount:   1,
+		InsecureCount: 1,
+		InsecureFiles: []InsecureFile{
+			{Path: "evil.php", Checksum: "abc123", Risk: RiskCritical, RiskStr: "critical", Details: "webshell detected"},
+		},
+	}
+
+	out := captureStdout(t, func() { RenderText(summary) })
+
+	if !strings.Contains(out, "INSECURE:") {
+		t.Errorf("expected INSECURE label, got:\n%s", out)
+	}
+	if !strings.Contains(out, "evil.php") {
+		t.Errorf("expected file path, got:\n%s", out)
+	}
+	if !strings.Contains(out, "webshell detected") {
+		t.Errorf("expected details, got:\n%s", out)
+	}
+}
+
+func TestRenderText_WithErrors(t *testing.T) {
+	summary := ScanSummary{
+		TotalFiles:  1,
+		UniqueFiles: 1,
+		ErrorCount:  1,
+		ErrorFiles: []ErrorFile{
+			{Path: "broken.php", Checksum: "def456", Details: "analysis timeout"},
+		},
+	}
+
+	out := captureStdout(t, func() { RenderText(summary) })
+
+	if !strings.Contains(out, "Errors:") {
+		t.Errorf("expected Errors label, got:\n%s", out)
+	}
+	if !strings.Contains(out, "broken.php") {
+		t.Errorf("expected file path, got:\n%s", out)
+	}
+}
+
+func TestRenderText_ShowsUniqueWhenDifferent(t *testing.T) {
+	summary := ScanSummary{
+		TotalFiles:  5,
+		UniqueFiles: 3,
+		SecureCount: 5,
+	}
+
+	out := captureStdout(t, func() { RenderText(summary) })
+
+	if !strings.Contains(out, "Unique files:   3") {
+		t.Errorf("expected unique files count when different from total, got:\n%s", out)
+	}
+}
+
+func TestRenderText_HidesUniqueWhenSame(t *testing.T) {
+	summary := ScanSummary{
+		TotalFiles:  3,
+		UniqueFiles: 3,
+		SecureCount: 3,
+	}
+
+	out := captureStdout(t, func() { RenderText(summary) })
+
+	if strings.Contains(out, "Unique files:") {
+		t.Errorf("should not show unique files when equal to total, got:\n%s", out)
+	}
+}
+
+func TestRenderText_ShowsSkipped(t *testing.T) {
+	summary := ScanSummary{
+		TotalFiles:   3,
+		UniqueFiles:  3,
+		SecureCount:  1,
+		SkippedCount: 2,
+	}
+
+	out := captureStdout(t, func() { RenderText(summary) })
+
+	if !strings.Contains(out, "Skipped:        2") {
+		t.Errorf("expected skipped count, got:\n%s", out)
+	}
+}
+
+func TestRenderJSON_Structure(t *testing.T) {
+	summary := ScanSummary{
+		TotalFiles:    3,
+		UniqueFiles:   2,
+		SecureCount:   1,
+		InsecureCount: 1,
+		ErrorCount:    1,
+		InsecureFiles: []InsecureFile{
+			{Path: "vuln.php", Checksum: "aaa", Risk: RiskHigh, RiskStr: "high", Details: "SQLi"},
+		},
+		ErrorFiles: []ErrorFile{
+			{Path: "err.php", Checksum: "bbb", Details: "timeout"},
+		},
+	}
+
+	out := captureStdout(t, func() { RenderJSON(summary, 1) })
+
+	var result jsonOutput
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("invalid JSON output: %v\nraw: %s", err, out)
+	}
+
+	if result.Summary.TotalFiles != 3 {
+		t.Errorf("totalFiles = %d, want 3", result.Summary.TotalFiles)
+	}
+	if result.Summary.UniqueFiles != 2 {
+		t.Errorf("uniqueFiles = %d, want 2", result.Summary.UniqueFiles)
+	}
+	if result.Summary.Secure != 1 {
+		t.Errorf("secure = %d, want 1", result.Summary.Secure)
+	}
+	if result.Summary.Insecure != 1 {
+		t.Errorf("insecure = %d, want 1", result.Summary.Insecure)
+	}
+	if result.Summary.Errors != 1 {
+		t.Errorf("errors = %d, want 1", result.Summary.Errors)
+	}
+	if result.ExitCode != 1 {
+		t.Errorf("exitCode = %d, want 1", result.ExitCode)
+	}
+	if len(result.Files) != 2 {
+		t.Fatalf("files count = %d, want 2", len(result.Files))
+	}
+
+	// Insecure file
+	if result.Files[0].Path != "vuln.php" {
+		t.Errorf("files[0].path = %q, want vuln.php", result.Files[0].Path)
+	}
+	if result.Files[0].Secure != "no" {
+		t.Errorf("files[0].secure = %q, want no", result.Files[0].Secure)
+	}
+	if result.Files[0].Risk != "high" {
+		t.Errorf("files[0].risk = %q, want high", result.Files[0].Risk)
+	}
+
+	// Error file
+	if result.Files[1].Secure != "error" {
+		t.Errorf("files[1].secure = %q, want error", result.Files[1].Secure)
+	}
+}
+
+func TestRenderJSON_AllClean(t *testing.T) {
+	summary := ScanSummary{
+		TotalFiles:  2,
+		UniqueFiles: 2,
+		SecureCount: 2,
+	}
+
+	out := captureStdout(t, func() { RenderJSON(summary, 0) })
+
+	var result jsonOutput
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("invalid JSON output: %v", err)
+	}
+
+	if result.ExitCode != 0 {
+		t.Errorf("exitCode = %d, want 0", result.ExitCode)
+	}
+	if len(result.Files) != 0 {
+		t.Errorf("files count = %d, want 0 for all-clean scan", len(result.Files))
+	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+	os.Stdout = w
+
+	fn()
+
+	w.Close()
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	os.Stdout = oldStdout
+
+	return buf.String()
 }
 
 func TestShouldFail(t *testing.T) {

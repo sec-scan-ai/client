@@ -72,7 +72,7 @@ sec-scan /path/to/project --fail-on high
 # Quiet mode - only show results, no progress
 sec-scan /path/to/project --quiet
 
-# Specify framework explicitly (auto-detected from composer.json by default)
+# Specify framework explicitly (auto-detected from composer.lock/composer.json by default)
 sec-scan /path/to/project --framework "Shopware 6"
 
 # Increase parallelism (default: 10 concurrent requests)
@@ -95,6 +95,7 @@ sec-scan /path/to/file.php
 | `--quiet` | `-q` | `SEC_SCAN_QUIET` | `false` | Suppress progress output |
 | `--output` | `-o` | `SEC_SCAN_OUTPUT` | `text` | Output format: `text` or `json` |
 | `--no-follow-symlinks` | - | - | `false` | Do not follow symlinks |
+| `--no-default-excludes` | - | - | `false` | Skip server-provided default exclude directories |
 
 Flag values take precedence over environment variables.
 
@@ -114,6 +115,12 @@ sec-scan /path/to/project --exclude vendor --exclude lib/vendor
 ```
 
 Excludes are case-insensitive.
+
+### Default excludes
+
+When sec-scan detects a framework, it fetches default exclude directories from the server. These skip auto-generated files (compiled templates, framework caches, generated proxy classes) that would produce false positives. Default excludes are shown in the progress output and cached locally for 24 hours.
+
+User `--exclude` flags are always additive on top of defaults. Use `--no-default-excludes` to disable server-provided defaults.
 
 ## Exit codes
 
@@ -143,7 +150,7 @@ sec-scan /path/to/project --output json --quiet | jq '.files[] | select(.risk ==
 
 ## Supported frameworks
 
-sec-scan auto-detects frameworks from `composer.json` and adjusts analysis accordingly:
+sec-scan auto-detects frameworks from `composer.lock` (preferred) or `composer.json` and adjusts analysis accordingly:
 
 - OXID eShop 6 / 7
 - Shopware 5 / 6
@@ -151,6 +158,9 @@ sec-scan auto-detects frameworks from `composer.json` and adjusts analysis accor
 - Laravel
 - Symfony
 - WordPress / WooCommerce
+- JTL-Shop 5
+- PrestaShop
+- Sylius
 
 ## License
 

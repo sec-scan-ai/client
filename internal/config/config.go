@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	DefaultServer    = "http://localhost:3000"
+	DefaultServer    = "https://sec-scan.ai"
 	DefaultBatchSize = 10
 	MinBatchSize     = 1
 	MaxBatchSize     = 50
@@ -29,6 +29,7 @@ type Config struct {
 	Output           string
 	NoFollowSymlinks  bool
 	NoDefaultExcludes bool
+	DryRun            bool
 	Path              string
 }
 
@@ -42,10 +43,9 @@ var ValidOutputFormats = []string{"text", "json"}
 // Flag values (non-zero) always take precedence.
 func (c *Config) ResolveEnv() {
 	if c.Server == "" {
+		c.Server = DefaultServer
 		if v := os.Getenv("SEC_SCAN_SERVER"); v != "" {
 			c.Server = v
-		} else {
-			c.Server = DefaultServer
 		}
 	}
 	if c.Token == "" {

@@ -61,7 +61,6 @@ func NewRootCmd() *cobra.Command {
 	}
 
 	flags := cmd.Flags()
-	flags.StringVarP(&cfg.Server, "server", "s", "", "Server URL (env: SEC_SCAN_SERVER)")
 	flags.StringVarP(&cfg.Token, "token", "t", "", "API token (env: SEC_SCAN_TOKEN)")
 	flags.IntVarP(&cfg.BatchSize, "batch-size", "b", 0, "Files per analysis batch (env: SEC_SCAN_BATCH_SIZE)")
 	flags.StringSliceVarP(&cfg.Excludes, "exclude", "e", nil, "Directories to exclude as relative paths from scan root (repeatable, e.g. vendor, admin/cache)")
@@ -73,6 +72,7 @@ func NewRootCmd() *cobra.Command {
 	flags.StringVarP(&cfg.Output, "output", "o", "", "Output format: text|json (env: SEC_SCAN_OUTPUT)")
 	flags.BoolVar(&cfg.NoFollowSymlinks, "no-follow-symlinks", false, "Do not follow symlinks")
 	flags.BoolVar(&cfg.NoDefaultExcludes, "no-default-excludes", false, "Skip server-provided default exclude directories")
+	flags.BoolVar(&cfg.DryRun, "dry-run", false, "Show what would be scanned without sending files to the server")
 
 	// Hide the alias flag from help
 	flags.MarkHidden("force-check")
@@ -135,6 +135,12 @@ func runScan(cfg *config.Config) int {
 	uniqueChecksums := make([]string, 0, len(uniqueMap))
 	for cs := range uniqueMap {
 		uniqueChecksums = append(uniqueChecksums, cs)
+	}
+
+	if cfg.DryRun {
+		output.Progress(cfg.Quiet, "Unique file(s): %d", len(uniqueChecksums))
+		output.Progress(cfg.Quiet, "Dry run - no files sent to server")
+		return 0
 	}
 
 	client := api.NewClient(cfg.Server, cfg.Token)
