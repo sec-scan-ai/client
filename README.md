@@ -54,9 +54,6 @@ You should see one clean file, one high-risk finding, and one critical finding.
 # Scan a PHP project
 sec-scan /path/to/project
 
-# Scan with explicit token
-sec-scan /path/to/project --token sc_your_token
-
 # Exclude directories (paths relative to scan root)
 sec-scan /path/to/project --exclude vendor --exclude admin/templates_c
 
@@ -80,9 +77,6 @@ sec-scan /path/to/project --batch-size 20
 
 # Preview what would be scanned without sending files
 sec-scan /path/to/project --dry-run
-
-# Scan a single file
-sec-scan /path/to/file.php
 
 # Use a custom ignore file (must not be inside the scan directory)
 sec-scan /path/to/project --ignore-file /etc/sec-scan/ignore
