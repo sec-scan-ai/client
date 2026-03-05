@@ -3,6 +3,7 @@ package output
 import (
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -64,6 +65,10 @@ type ProgressSpinner struct {
 	errors    atomic.Int32
 	inflight  atomic.Int32
 	cancelled atomic.Bool
+	critical  atomic.Int32
+	high      atomic.Int32
+	medium    atomic.Int32
+	low       atomic.Int32
 	stop      chan struct{}
 	wg        sync.WaitGroup
 }
@@ -96,6 +101,20 @@ func (s *ProgressSpinner) IncrementError() {
 	s.inflight.Add(-1)
 }
 
+// IncrementRisk increments the counter for the given risk level.
+func (s *ProgressSpinner) IncrementRisk(risk string) {
+	switch risk {
+	case "critical":
+		s.critical.Add(1)
+	case "high":
+		s.high.Add(1)
+	case "medium":
+		s.medium.Add(1)
+	case "low":
+		s.low.Add(1)
+	}
+}
+
 // SetCancelled marks the spinner as cancelled (waiting for in-flight requests).
 func (s *ProgressSpinner) SetCancelled() {
 	s.cancelled.Store(true)
@@ -115,6 +134,26 @@ func (s *ProgressSpinner) Stop() {
 	}
 }
 
+func (s *ProgressSpinner) riskSuffix() string {
+	var parts []string
+	if v := s.critical.Load(); v > 0 {
+		parts = append(parts, fmt.Sprintf("%d critical", v))
+	}
+	if v := s.high.Load(); v > 0 {
+		parts = append(parts, fmt.Sprintf("%d high", v))
+	}
+	if v := s.medium.Load(); v > 0 {
+		parts = append(parts, fmt.Sprintf("%d medium", v))
+	}
+	if v := s.low.Load(); v > 0 {
+		parts = append(parts, fmt.Sprintf("%d low", v))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return ", " + strings.Join(parts, ", ")
+}
+
 func (s *ProgressSpinner) run() {
 	defer s.wg.Done()
 	start := time.Now()
@@ -130,9 +169,9 @@ func (s *ProgressSpinner) run() {
 			elapsed := int(time.Since(start).Seconds())
 			done := s.done.Load()
 			errs := s.errors.Load()
-			suffix := ""
+			suffix := s.riskSuffix()
 			if errs > 0 {
-				suffix = fmt.Sprintf(", %d errors", errs)
+				suffix += fmt.Sprintf(", %d errors", errs)
 			}
 			if s.cancelled.Load() {
 				inflight := s.inflight.Load()

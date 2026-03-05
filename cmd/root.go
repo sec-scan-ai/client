@@ -265,6 +265,9 @@ func runScan(cfg *config.Config) int {
 				mu.Lock()
 				for k, v := range fileResults {
 					results[k] = v
+					if progress != nil && v.Secure == "no" {
+						progress.IncrementRisk(v.Risk)
+					}
 				}
 				mu.Unlock()
 
