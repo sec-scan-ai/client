@@ -78,6 +78,26 @@ func TestDetect_Frameworks(t *testing.T) {
 			want:     "WordPress/WooCommerce",
 		},
 		{
+			name:     "JTL-Shop 5 via jtl-shop",
+			composer: `{"require": {"jtl-shop/shop5-core": "^5.0"}}`,
+			want:     "JTL-Shop 5",
+		},
+		{
+			name:     "JTL-Shop 5 via jtl prefix",
+			composer: `{"require": {"jtl/connector-core": "^5.0"}}`,
+			want:     "JTL-Shop 5",
+		},
+		{
+			name:     "PrestaShop",
+			composer: `{"require": {"prestashop/prestashop": "^8.0"}}`,
+			want:     "PrestaShop",
+		},
+		{
+			name:     "Sylius",
+			composer: `{"require": {"sylius/sylius": "^1.12"}}`,
+			want:     "Sylius",
+		},
+		{
 			name:     "Named project fallback",
 			composer: `{"name": "my-vendor/my-app", "require": {"php": "^8.1"}}`,
 			want:     "PHP project (my-vendor/my-app)",
@@ -107,30 +127,113 @@ func TestDetect_Frameworks(t *testing.T) {
 	}
 }
 
-func TestDetect_WalkUp(t *testing.T) {
-	// composer.json is in parent directory
-	root := t.TempDir()
-	writeComposer(t, root, `{"require": {"laravel/framework": "^10.0"}}`)
+func TestDetect_ComposerLock(t *testing.T) {
+	t.Run("lock preferred over json", func(t *testing.T) {
+		dir := t.TempDir()
+		writeComposer(t, dir, `{"require": {"laravel/framework": "^10.0"}}`)
+		writeComposerLock(t, dir, `{"packages": [{"name": "shopware/core", "version": "v6.5.0"}]}`)
 
-	subDir := filepath.Join(root, "src", "app")
-	os.MkdirAll(subDir, 0o755)
+		got := Detect(dir)
+		if got != "Shopware 6" {
+			t.Errorf("Detect() = %q, want %q (lock should take precedence)", got, "Shopware 6")
+		}
+	})
 
-	got := Detect(subDir)
-	if got != "Laravel" {
-		t.Errorf("Detect() = %q, want %q (should find composer.json in parent)", got, "Laravel")
-	}
+	t.Run("lock with no match falls back to json", func(t *testing.T) {
+		dir := t.TempDir()
+		writeComposer(t, dir, `{"require": {"laravel/framework": "^10.0"}}`)
+		writeComposerLock(t, dir, `{"packages": [{"name": "php", "version": "8.2.0"}]}`)
+
+		got := Detect(dir)
+		if got != "Laravel" {
+			t.Errorf("Detect() = %q, want %q (should fall back to composer.json)", got, "Laravel")
+		}
+	})
+
+	t.Run("invalid lock json falls back to json", func(t *testing.T) {
+		dir := t.TempDir()
+		writeComposer(t, dir, `{"require": {"laravel/framework": "^10.0"}}`)
+		os.WriteFile(filepath.Join(dir, "composer.lock"), []byte("not json{{{"), 0o644)
+
+		got := Detect(dir)
+		if got != "Laravel" {
+			t.Errorf("Detect() = %q, want %q (invalid lock should fall back to json)", got, "Laravel")
+		}
+	})
+
+	t.Run("lock packages-dev detection", func(t *testing.T) {
+		dir := t.TempDir()
+		writeComposerLock(t, dir, `{"packages": [], "packages-dev": [{"name": "laravel/framework", "version": "v10.0.0"}]}`)
+
+		got := Detect(dir)
+		if got != "Laravel" {
+			t.Errorf("Detect() = %q, want %q", got, "Laravel")
+		}
+	})
+
+	t.Run("lock with exact version for OXID 7", func(t *testing.T) {
+		dir := t.TempDir()
+		writeComposerLock(t, dir, `{"packages": [{"name": "oxid-esales/oxideshop-ce", "version": "v7.0.1"}]}`)
+
+		got := Detect(dir)
+		if got != "OXID eShop 7.x" {
+			t.Errorf("Detect() = %q, want %q", got, "OXID eShop 7.x")
+		}
+	})
 }
 
-func TestDetect_WalkDown(t *testing.T) {
-	// composer.json is in a subdirectory (not current or parent)
+func TestDetect_WalkUp(t *testing.T) {
+	t.Run("finds composer.json in parent", func(t *testing.T) {
+		root := t.TempDir()
+		writeComposer(t, root, `{"require": {"laravel/framework": "^10.0"}}`)
+
+		subDir := filepath.Join(root, "src", "app")
+		os.MkdirAll(subDir, 0o755)
+
+		got := Detect(subDir)
+		if got != "Laravel" {
+			t.Errorf("Detect() = %q, want %q (should find composer.json in parent)", got, "Laravel")
+		}
+	})
+
+	t.Run("finds composer.lock in parent", func(t *testing.T) {
+		root := t.TempDir()
+		writeComposerLock(t, root, `{"packages": [{"name": "shopware/core", "version": "v6.5.0"}]}`)
+
+		subDir := filepath.Join(root, "public")
+		os.MkdirAll(subDir, 0o755)
+
+		got := Detect(subDir)
+		if got != "Shopware 6" {
+			t.Errorf("Detect() = %q, want %q (should find composer.lock in parent)", got, "Shopware 6")
+		}
+	})
+
+	t.Run("scan dir takes precedence over parent", func(t *testing.T) {
+		root := t.TempDir()
+		writeComposer(t, root, `{"require": {"laravel/framework": "^10.0"}}`)
+
+		subDir := filepath.Join(root, "subproject")
+		os.MkdirAll(subDir, 0o755)
+		writeComposer(t, subDir, `{"require": {"shopware/core": "^6.4"}}`)
+
+		got := Detect(subDir)
+		if got != "Shopware 6" {
+			t.Errorf("Detect() = %q, want %q (scan dir should take precedence)", got, "Shopware 6")
+		}
+	})
+}
+
+func TestDetect_NoWalkDown(t *testing.T) {
+	// composer.json only in a subdirectory - should NOT be found
 	root := t.TempDir()
 	subDir := filepath.Join(root, "packages", "app")
 	os.MkdirAll(subDir, 0o755)
 	writeComposer(t, subDir, `{"require": {"shopware/core": "^6.4"}}`)
 
 	got := Detect(root)
-	if got != "Shopware 6" {
-		t.Errorf("Detect() = %q, want %q (should find composer.json in subdirectory)", got, "Shopware 6")
+	if got != DefaultFramework {
+		t.Errorf("Detect() = %q, want %q (should not walk down into subdirectories)", got, DefaultFramework)
 	}
 }
 
@@ -157,5 +260,12 @@ func writeComposer(t *testing.T, dir, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, "composer.json"), []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write composer.json: %v", err)
+	}
+}
+
+func writeComposerLock(t *testing.T, dir, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "composer.lock"), []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write composer.lock: %v", err)
 	}
 }

@@ -254,6 +254,63 @@ func TestError_500_AllRetriesFail(t *testing.T) {
 	}
 }
 
+func TestFrameworkConfig_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/api/frameworks/Shopware 6" {
+			t.Errorf("path = %s, want /api/frameworks/Shopware 6", r.URL.Path)
+		}
+		if r.Header.Get("Content-Type") != "" {
+			t.Errorf("Content-Type should not be set for GET, got %q", r.Header.Get("Content-Type"))
+		}
+		if r.Header.Get("Authorization") != "Bearer sc_test" {
+			t.Errorf("Authorization = %q, want %q", r.Header.Get("Authorization"), "Bearer sc_test")
+		}
+
+		json.NewEncoder(w).Encode(FrameworkConfigResponse{
+			DefaultExcludes: []string{"var/cache", "public/theme"},
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "sc_test")
+	resp, err := client.FrameworkConfig("Shopware 6")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(resp.DefaultExcludes) != 2 {
+		t.Fatalf("default_excludes count = %d, want 2", len(resp.DefaultExcludes))
+	}
+	if resp.DefaultExcludes[0] != "var/cache" {
+		t.Errorf("default_excludes[0] = %q, want %q", resp.DefaultExcludes[0], "var/cache")
+	}
+}
+
+func TestFrameworkConfig_404(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(404)
+		json.NewEncoder(w).Encode(ErrorResponse{Message: "Unknown framework"})
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "sc_test")
+	_, err := client.FrameworkConfig("Unknown Framework")
+	if err == nil {
+		t.Fatal("expected error for 404")
+	}
+
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("expected *APIError, got %T", err)
+	}
+	if apiErr.StatusCode != 404 {
+		t.Errorf("status = %d, want 404", apiErr.StatusCode)
+	}
+}
+
 func TestError_400_NoRetry(t *testing.T) {
 	var attempts atomic.Int32
 

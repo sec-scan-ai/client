@@ -5,11 +5,13 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 
 	"github.com/sec-scan-ai/client/internal/api"
+	"github.com/sec-scan-ai/client/internal/cache"
 	"github.com/sec-scan-ai/client/internal/collector"
 	"github.com/sec-scan-ai/client/internal/config"
 	"github.com/sec-scan-ai/client/internal/framework"
@@ -70,6 +72,7 @@ func NewRootCmd() *cobra.Command {
 	flags.BoolVarP(&cfg.Quiet, "quiet", "q", false, "Suppress progress output (env: SEC_SCAN_QUIET)")
 	flags.StringVarP(&cfg.Output, "output", "o", "", "Output format: text|json (env: SEC_SCAN_OUTPUT)")
 	flags.BoolVar(&cfg.NoFollowSymlinks, "no-follow-symlinks", false, "Do not follow symlinks")
+	flags.BoolVar(&cfg.NoDefaultExcludes, "no-default-excludes", false, "Skip server-provided default exclude directories")
 
 	// Hide the alias flag from help
 	flags.MarkHidden("force-check")
@@ -87,9 +90,26 @@ func runScan(cfg *config.Config) int {
 		return 1
 	}
 
+	// Detect framework (before file collection so we can fetch default excludes)
+	fw := cfg.Framework
+	if fw == "" {
+		fw = framework.Detect(target)
+	}
+	output.Progress(cfg.Quiet, "Framework: %s", fw)
+
+	// Fetch default excludes from server and merge with user excludes
+	mergedExcludes := cfg.Excludes
+	if !cfg.NoDefaultExcludes {
+		defaultExcludes := fetchDefaultExcludes(cfg, fw)
+		if len(defaultExcludes) > 0 {
+			output.Progress(cfg.Quiet, "Default excludes: %s", strings.Join(defaultExcludes, ", "))
+			mergedExcludes = mergeExcludes(cfg.Excludes, defaultExcludes)
+		}
+	}
+
 	// Collect PHP files
 	output.Progress(cfg.Quiet, "Scanning %s ...", cfg.Path)
-	files, err := collector.CollectPHPFiles(target, cfg.Excludes, followSymlinks)
+	files, err := collector.CollectPHPFiles(target, mergedExcludes, followSymlinks)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
@@ -100,13 +120,6 @@ func runScan(cfg *config.Config) int {
 		return 0
 	}
 	output.Progress(cfg.Quiet, "Found %d PHP file(s)", len(files))
-
-	// Detect framework
-	fw := cfg.Framework
-	if fw == "" {
-		fw = framework.Detect(target)
-	}
-	output.Progress(cfg.Quiet, "Framework: %s", fw)
 
 	// Deduplicate by checksum
 	type uniqueFile struct {
@@ -285,4 +298,50 @@ func runScan(cfg *config.Config) int {
 	}
 
 	return exitCode
+}
+
+// fetchDefaultExcludes gets default excludes from cache or server.
+func fetchDefaultExcludes(cfg *config.Config, fw string) []string {
+	// Try cache first
+	if cached := cache.Get(fw); cached != nil {
+		return cached
+	}
+
+	// Fetch from server
+	client := api.NewClient(cfg.Server, cfg.Token)
+	resp, err := client.FrameworkConfig(fw)
+	if err != nil {
+		// Non-fatal - continue without defaults
+		output.Progress(cfg.Quiet, "Note: no default excludes available for %s", fw)
+		return nil
+	}
+
+	// Cache the result
+	cache.Set(fw, resp.DefaultExcludes)
+
+	return resp.DefaultExcludes
+}
+
+// mergeExcludes combines default and user excludes, deduplicating case-insensitively.
+func mergeExcludes(userExcludes, defaultExcludes []string) []string {
+	seen := make(map[string]bool)
+	var result []string
+
+	for _, e := range defaultExcludes {
+		lower := strings.ToLower(strings.TrimRight(e, "/\\"))
+		if !seen[lower] {
+			seen[lower] = true
+			result = append(result, e)
+		}
+	}
+
+	for _, e := range userExcludes {
+		lower := strings.ToLower(strings.TrimRight(e, "/\\"))
+		if !seen[lower] {
+			seen[lower] = true
+			result = append(result, e)
+		}
+	}
+
+	return result
 }

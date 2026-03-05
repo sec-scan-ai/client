@@ -7,14 +7,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
 const (
-	LookupBatchSize = 500
-	LookupTimeout   = 30 * time.Second
-	AnalyzeTimeout  = 300 * time.Second
-	maxRetries      = 2
+	LookupBatchSize        = 500
+	LookupTimeout          = 30 * time.Second
+	AnalyzeTimeout         = 300 * time.Second
+	FrameworkConfigTimeout = 10 * time.Second
+	maxRetries             = 2
 )
 
 // Client handles HTTP communication with the sec-scan server.
@@ -78,6 +80,22 @@ func (c *Client) lookupBatch(checksums []string) (*LookupResponse, error) {
 	}
 	if result.Results == nil {
 		result.Results = make(map[string]FileResult)
+	}
+
+	return &result, nil
+}
+
+// FrameworkConfig fetches default configuration for a framework from the server.
+func (c *Client) FrameworkConfig(framework string) (*FrameworkConfigResponse, error) {
+	path := "/api/frameworks/" + url.PathEscape(framework)
+	respBody, err := c.doWithRetry("GET", path, nil, FrameworkConfigTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	var result FrameworkConfigResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse framework config response: %w", err)
 	}
 
 	return &result, nil
@@ -156,18 +174,25 @@ func (e *APIError) Error() string {
 }
 
 func (c *Client) doRequest(method, path string, body []byte, timeout time.Duration) ([]byte, error) {
-	url := c.baseURL + path
+	reqURL := c.baseURL + path
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
+	var bodyReader io.Reader
+	if body != nil {
+		bodyReader = bytes.NewReader(body)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, reqURL, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Content-Type", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

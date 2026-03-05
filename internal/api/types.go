@@ -43,3 +43,8 @@ type ErrorResponse struct {
 	StatusCode int    `json:"statusCode"`
 	Message    string `json:"message"`
 }
+
+// FrameworkConfigResponse is the server response from GET /api/frameworks/{name}.
+type FrameworkConfigResponse struct {
+	DefaultExcludes []string `json:"default_excludes"`
+}

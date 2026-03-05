@@ -27,8 +27,9 @@ type Config struct {
 	FailOn           string
 	Quiet            bool
 	Output           string
-	NoFollowSymlinks bool
-	Path             string
+	NoFollowSymlinks  bool
+	NoDefaultExcludes bool
+	Path              string
 }
 
 // ValidFailOnLevels are the accepted values for --fail-on.
