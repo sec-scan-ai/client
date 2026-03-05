@@ -13,7 +13,7 @@ Built with deep knowledge of OXID eShop, Shopware, Magento, and other PHP framew
 3. Unknown files are uploaded to the sec-scan API for analysis
 4. Results are displayed with risk levels and details
 
-Every file is cached globally by content hash - re-scans, CI runs, and team sharing return results in milliseconds.
+Every file is cached globally by content hash - repeated scans and CI runs return results in milliseconds.
 
 ## Installation
 
@@ -78,8 +78,14 @@ sec-scan /path/to/project --framework "Shopware 6"
 # Increase parallelism (default: 10 concurrent requests)
 sec-scan /path/to/project --batch-size 20
 
+# Preview what would be scanned without sending files
+sec-scan /path/to/project --dry-run
+
 # Scan a single file
 sec-scan /path/to/file.php
+
+# Use a custom ignore file (must not be inside the scan directory)
+sec-scan /path/to/project --ignore-file /etc/sec-scan/ignore
 ```
 
 ## Options
@@ -96,6 +102,8 @@ sec-scan /path/to/file.php
 | `--output` | `-o` | `SEC_SCAN_OUTPUT` | `text` | Output format: `text` or `json` |
 | `--no-follow-symlinks` | - | - | `false` | Do not follow symlinks |
 | `--no-default-excludes` | - | - | `false` | Skip server-provided default exclude directories |
+| `--dry-run` | - | - | `false` | Show what would be scanned without sending files |
+| `--ignore-file` | - | - | `~/.sec-scan/ignore` | Path to file with checksums to ignore |
 
 Flag values take precedence over environment variables.
 
@@ -121,6 +129,26 @@ Excludes are case-insensitive.
 When sec-scan detects a framework, it fetches default exclude directories from the server. These skip auto-generated files (compiled templates, framework caches, generated proxy classes) that would produce false positives. Default excludes are shown in the progress output and cached locally for 24 hours.
 
 User `--exclude` flags are always additive on top of defaults. Use `--no-default-excludes` to disable server-provided defaults.
+
+## Ignoring false positives
+
+If sec-scan flags a file as insecure but you've reviewed it and disagree, you can add its SHA256 checksum to an ignore file. Ignored files are skipped entirely - no lookup or analysis requests are sent.
+
+**Default location:** `~/.sec-scan/ignore`
+
+**Format:** One SHA256 checksum per line (64 hex characters). Inline comments are supported:
+
+```
+# admin/xmlrpc.php - reviewed, not exploitable in our setup
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  # admin/xmlrpc.php
+a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a
+```
+
+The checksum is shown in the scan output next to each finding. If the file content changes (even by one byte), the checksum changes and the ignore entry no longer matches - the file will be scanned again.
+
+**Security:** The ignore file must not be inside the scan directory. An attacker who can upload files to your web root could plant an ignore file to suppress detection of their webshell. For this reason, `--ignore-file` rejects any path inside the scan directory.
+
+**Team sharing:** Use `--ignore-file /path/to/shared/ignore` to point to a shared location outside the project.
 
 ## Exit codes
 

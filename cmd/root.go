@@ -15,7 +15,9 @@ import (
 	"github.com/sec-scan-ai/client/internal/collector"
 	"github.com/sec-scan-ai/client/internal/config"
 	"github.com/sec-scan-ai/client/internal/framework"
+	"github.com/sec-scan-ai/client/internal/ignore"
 	"github.com/sec-scan-ai/client/internal/output"
+	"github.com/sec-scan-ai/client/internal/setup"
 	"github.com/spf13/cobra"
 )
 
@@ -73,6 +75,7 @@ func NewRootCmd() *cobra.Command {
 	flags.BoolVar(&cfg.NoFollowSymlinks, "no-follow-symlinks", false, "Do not follow symlinks")
 	flags.BoolVar(&cfg.NoDefaultExcludes, "no-default-excludes", false, "Skip server-provided default exclude directories")
 	flags.BoolVar(&cfg.DryRun, "dry-run", false, "Show what would be scanned without sending files to the server")
+	flags.StringVar(&cfg.IgnoreFile, "ignore-file", "", "Path to file with checksums to ignore (must not be inside scan directory)")
 
 	// Hide the alias flag from help
 	flags.MarkHidden("force-check")
@@ -129,6 +132,53 @@ func runScan(cfg *config.Config) int {
 	for _, f := range files {
 		if _, exists := uniqueMap[f.Checksum]; !exists {
 			uniqueMap[f.Checksum] = uniqueFile{file: f}
+		}
+	}
+
+	// Load ignore list and filter
+	ignorePath := cfg.IgnoreFile
+	if ignorePath == "" {
+		if dir := setup.ConfigDir(); dir != "" {
+			ignorePath = filepath.Join(dir, "ignore")
+		}
+	} else {
+		absIgnore, err := filepath.Abs(ignorePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cannot resolve ignore file path: %v\n", err)
+			return 1
+		}
+		if strings.HasPrefix(absIgnore, target+string(filepath.Separator)) || absIgnore == target {
+			fmt.Fprintf(os.Stderr, "Error: ignore file must not be inside the scan directory (security risk)\n")
+			return 1
+		}
+		ignorePath = absIgnore
+	}
+
+	if ignorePath != "" {
+		ignored, err := ignore.Load(ignorePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cannot read ignore file: %v\n", err)
+			return 1
+		}
+		if len(ignored) > 0 {
+			count := 0
+			for cs := range uniqueMap {
+				if ignored[cs] {
+					delete(uniqueMap, cs)
+					count++
+				}
+			}
+			if count > 0 {
+				output.Progress(cfg.Quiet, "Ignored: %d file(s) from ignore list", count)
+				// Remove ignored files from the files slice so they don't show as skipped in summary
+				filtered := files[:0]
+				for _, f := range files {
+					if !ignored[f.Checksum] {
+						filtered = append(filtered, f)
+					}
+				}
+				files = filtered
+			}
 		}
 	}
 

@@ -30,6 +30,7 @@ type Config struct {
 	NoFollowSymlinks  bool
 	NoDefaultExcludes bool
 	DryRun            bool
+	IgnoreFile        string
 	Path              string
 }
 

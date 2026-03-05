@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	apiPkg "github.com/sec-scan-ai/client/internal/api"
+	"github.com/sec-scan-ai/client/internal/collector"
 	"github.com/sec-scan-ai/client/internal/config"
 )
 
@@ -403,6 +404,64 @@ func TestScan_FailOnThreshold(t *testing.T) {
 	exitCode2 := runScan(cfg2)
 	if exitCode2 != 1 {
 		t.Errorf("exit code = %d, want 1 (medium finding meets low threshold)", exitCode2)
+	}
+}
+
+func TestScan_IgnoreList(t *testing.T) {
+	dir := t.TempDir()
+	writePHP(t, dir, "vuln.php", "<?php eval($_POST['x']);")
+
+	// Compute the checksum of our test file
+	files, _ := collector.CollectPHPFiles(dir, nil, false)
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(files))
+	}
+	checksum := files[0].Checksum
+
+	// Write ignore file outside scan dir
+	ignoreDir := t.TempDir()
+	ignoreFile := filepath.Join(ignoreDir, "ignore")
+	os.WriteFile(ignoreFile, []byte(checksum+" # vuln.php - false positive\n"), 0o644)
+
+	server := mockServer(t,
+		func(req apiPkg.LookupRequest) apiPkg.LookupResponse {
+			t.Error("ignored file should not reach lookup")
+			return apiPkg.LookupResponse{}
+		},
+		func(req apiPkg.AnalyzeRequest) apiPkg.AnalyzeResponse {
+			t.Error("ignored file should not reach analyze")
+			return apiPkg.AnalyzeResponse{}
+		},
+	)
+	defer server.Close()
+
+	cfg := testConfig(server.URL, dir)
+	cfg.IgnoreFile = ignoreFile
+	exitCode := runScan(cfg)
+	if exitCode != 0 {
+		t.Errorf("exit code = %d, want 0 (all files ignored)", exitCode)
+	}
+}
+
+func TestScan_IgnoreFileInsideScanDir(t *testing.T) {
+	dir := t.TempDir()
+	writePHP(t, dir, "test.php", "<?php echo 1;")
+
+	// Write ignore file inside scan dir - should be rejected
+	ignoreFile := filepath.Join(dir, "ignore")
+	os.WriteFile(ignoreFile, []byte(""), 0o644)
+
+	cfg := testConfig("http://localhost:1", dir)
+	cfg.IgnoreFile = ignoreFile
+	stderr := captureStderr(t, func() {
+		exitCode := runScan(cfg)
+		if exitCode != 1 {
+			t.Errorf("exit code = %d, want 1 (security error)", exitCode)
+		}
+	})
+
+	if !strings.Contains(stderr, "must not be inside the scan directory") {
+		t.Errorf("expected security error, got: %s", stderr)
 	}
 }
 

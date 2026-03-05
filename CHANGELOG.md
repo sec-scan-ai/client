@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.3.2
+
+### New: Ignore list for false positives
+
+Files flagged as insecure can now be ignored by adding their SHA256 checksum to `~/.sec-scan/ignore`. Ignored files are skipped entirely - no lookup or analysis requests are sent. Use `--ignore-file` to specify a custom path.
+
+For security, the ignore file must not be inside the scan directory - an attacker could plant one to suppress detection of their webshell.
+
+### Live risk counters during analysis
+
+The progress spinner now shows risk level counts as results come back from the server, so you can see findings in real-time without waiting for the full scan to finish.
+
 ## v0.3.1
 
 ### New: `--dry-run` flag

@@ -28,6 +28,7 @@ Go CLI client for the sec-scan.ai PHP security scanner. Collects PHP files from 
 - Per-request context timeouts (not shared http.Client.Timeout) for concurrency safety
 - First-run setup creates `~/.sec-scan/` and prompts for API token
 - `SEC_SCAN_SERVER` env var exists for internal/dev use but is undocumented - default is always `https://sec-scan.ai`
+- Ignore file (`~/.sec-scan/ignore`) must never be inside the scan directory - security risk (attacker could plant one to suppress webshell detection)
 
 ## Test Files (`test-files/`)
 - `clean.php` - no vulnerabilities (should be flagged clean)
