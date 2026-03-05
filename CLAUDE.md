@@ -29,6 +29,7 @@ Go CLI client for the sec-scan.ai PHP security scanner. Collects PHP files from 
 - First-run setup creates `~/.sec-scan/` and prompts for API token
 - `SEC_SCAN_SERVER` env var exists for internal/dev use but is undocumented - default is always `https://sec-scan.ai`
 - Ignore file (`~/.sec-scan/ignore`) must never be inside the scan directory - security risk (attacker could plant one to suppress webshell detection)
+- Large files (>400KB) are split into overlapping 400KB chunks (20KB overlap) - prevents attackers from hiding malicious code beyond a truncation point. Each chunk is analyzed independently and appears as a separate entry with a `[1/3]` suffix. No merging of results.
 
 ## Test Files (`test-files/`)
 - `clean.php` - no vulnerabilities (should be flagged clean)

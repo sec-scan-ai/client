@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.3
+
+### Chunked analysis for large files
+
+Files over 400KB are now split into overlapping 400KB chunks (with 20KB overlap) and each chunk is analyzed independently. Previously, files over 500KB were truncated before analysis - an attacker could pad a webshell with junk at the top to hide malicious code beyond the truncation point. Chunking eliminates this blind spot and also fixes checksum mismatches caused by truncation.
+
+Chunks appear as separate entries in output with a `[1/3]` suffix. The overlap ensures malicious code at chunk boundaries is fully contained in at least one chunk.
+
 ## v0.3.2
 
 ### New: Ignore list for false positives

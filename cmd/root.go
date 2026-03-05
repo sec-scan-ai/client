@@ -109,6 +109,9 @@ func runScan(cfg *config.Config) int {
 			mergedExcludes = mergeExcludes(cfg.Excludes, defaultExcludes)
 		}
 	}
+	if len(cfg.Excludes) > 0 {
+		output.Progress(cfg.Quiet, "Manual excludes: %s", strings.Join(cfg.Excludes, ", "))
+	}
 
 	// Collect PHP files
 	output.Progress(cfg.Quiet, "Scanning %s ...", cfg.Path)
@@ -161,6 +164,7 @@ func runScan(cfg *config.Config) int {
 			return 1
 		}
 		if len(ignored) > 0 {
+			output.Progress(cfg.Quiet, "Ignore list: %s (%d checksums)", ignorePath, len(ignored))
 			count := 0
 			for cs := range uniqueMap {
 				if ignored[cs] {
@@ -270,7 +274,7 @@ func runScan(cfg *config.Config) int {
 				break
 			}
 
-			content, err := collector.ReadContent(f.AbsPath)
+			content, err := collector.ReadContent(f.AbsPath, f.ChunkOffset, f.ChunkLen)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: cannot read %s: %v\n", f.RelPath, err)
 				continue

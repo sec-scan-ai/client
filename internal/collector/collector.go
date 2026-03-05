@@ -10,14 +10,19 @@ import (
 	"unicode/utf8"
 )
 
-const MaxFileSize = 500_000
+const (
+	ChunkSize    = 400_000
+	ChunkOverlap = 20_000
+)
 
-// PHPFile represents a collected PHP file with its metadata.
+// PHPFile represents a collected PHP file (or chunk of one) with its metadata.
 type PHPFile struct {
-	AbsPath  string
-	RelPath  string
-	Checksum string
-	Size     int64
+	AbsPath     string
+	RelPath     string // includes " [1/3]" suffix for chunks
+	Checksum    string
+	Size        int64
+	ChunkOffset int // 0 for non-chunked
+	ChunkLen    int // 0 for non-chunked (means full file)
 }
 
 // CollectPHPFiles walks the target path and returns all .php files.
@@ -35,11 +40,11 @@ func CollectPHPFiles(target string, excludes []string, followSymlinks bool) ([]P
 		if !isPHP(target) {
 			return nil, fmt.Errorf("%s is not a .php file", target)
 		}
-		f, err := collectFile(target, target)
+		chunks, err := collectFile(target, target)
 		if err != nil {
 			return nil, err
 		}
-		return []PHPFile{f}, nil
+		return chunks, nil
 	}
 
 	absTarget, err := filepath.Abs(target)
@@ -68,11 +73,11 @@ func CollectPHPFiles(target string, excludes []string, followSymlinks bool) ([]P
 			if d.IsDir() || !isPHP(path) {
 				return nil
 			}
-			f, err := collectFile(path, absTarget)
+			chunks, err := collectFile(path, absTarget)
 			if err != nil {
 				return nil // skip unreadable files
 			}
-			files = append(files, f)
+			files = append(files, chunks...)
 			return nil
 		})
 	}
@@ -88,34 +93,30 @@ func sanitizeUTF8(data []byte) string {
 	return strings.ToValidUTF8(string(data), string(utf8.RuneError))
 }
 
-// ReadContent reads file content, truncating at MaxFileSize.
+// ReadContent reads file content for sending to the server.
+// For non-chunked files (offset=0, length=0), reads the full file.
+// For chunks, reads the specified byte range.
 // Invalid UTF-8 bytes are replaced with U+FFFD to match JSON encoding behavior.
-func ReadContent(path string) (string, error) {
+func ReadContent(path string, offset, length int) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
-	truncated := len(data) > MaxFileSize
-	if truncated {
-		data = data[:MaxFileSize]
+	if offset > 0 || length > 0 {
+		end := offset + length
+		if end > len(data) {
+			end = len(data)
+		}
+		data = data[offset:end]
 	}
-	content := sanitizeUTF8(data)
-	if truncated {
-		content += "\n... [truncated]"
-	}
-	return content, nil
+	return sanitizeUTF8(data), nil
 }
 
-// FileChecksum computes the SHA256 hex digest of a file's UTF-8-sanitized contents.
-// Uses sanitizeUTF8 so the hash matches what the server computes from the
-// JSON-decoded content string.
-func FileChecksum(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	content := sanitizeUTF8(data)
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(content))), nil
+// fileChecksum computes the SHA256 hex digest of content as it would be sent
+// to the server (UTF-8 sanitized). This ensures the checksum matches what the
+// server computes from the received content.
+func fileChecksum(content string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 }
 
 type inode struct {
@@ -162,43 +163,72 @@ func walkFollowSymlinks(root, base string, excludes []string, visited map[inode]
 			continue
 		}
 
-		f, err := collectFile(path, base)
+		chunks, err := collectFile(path, base)
 		if err != nil {
 			continue // skip unreadable files
 		}
-		*files = append(*files, f)
+		*files = append(*files, chunks...)
 	}
 
 	return nil
 }
 
-func collectFile(path, base string) (PHPFile, error) {
+func collectFile(path, base string) ([]PHPFile, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return PHPFile{}, err
+		return nil, err
+	}
+
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return nil, err
 	}
 
 	info, err := os.Stat(absPath)
 	if err != nil {
-		return PHPFile{}, err
-	}
-
-	checksum, err := FileChecksum(absPath)
-	if err != nil {
-		return PHPFile{}, err
+		return nil, err
 	}
 
 	relPath, err := filepath.Rel(base, absPath)
 	if err != nil {
 		relPath = filepath.Base(absPath)
 	}
+	relPath = filepath.ToSlash(relPath)
 
-	return PHPFile{
-		AbsPath:  absPath,
-		RelPath:  filepath.ToSlash(relPath),
-		Checksum: checksum,
-		Size:     info.Size(),
-	}, nil
+	// Small file - single entry, no chunking
+	if len(data) <= ChunkSize {
+		content := sanitizeUTF8(data)
+		return []PHPFile{{
+			AbsPath:  absPath,
+			RelPath:  relPath,
+			Checksum: fileChecksum(content),
+			Size:     info.Size(),
+		}}, nil
+	}
+
+	// Large file - split into overlapping chunks
+	var chunks []PHPFile
+	step := ChunkSize - ChunkOverlap
+	totalChunks := (len(data)-1)/step + 1
+
+	for i := 0; i < totalChunks; i++ {
+		offset := i * step
+		end := offset + ChunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		chunkContent := sanitizeUTF8(data[offset:end])
+		chunks = append(chunks, PHPFile{
+			AbsPath:     absPath,
+			RelPath:     fmt.Sprintf("%s [%d/%d]", relPath, i+1, totalChunks),
+			Checksum:    fileChecksum(chunkContent),
+			Size:        info.Size(),
+			ChunkOffset: offset,
+			ChunkLen:    end - offset,
+		})
+	}
+
+	return chunks, nil
 }
 
 func isPHP(path string) bool {

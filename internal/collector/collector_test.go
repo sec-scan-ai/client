@@ -152,19 +152,22 @@ func TestCollectPHPFiles_NonExistent(t *testing.T) {
 	}
 }
 
-func TestFileChecksum(t *testing.T) {
+func TestCollectPHPFiles_ChecksumMatchesContent(t *testing.T) {
 	dir := t.TempDir()
 	content := "<?php echo 'hello';"
 	writeFile(t, dir, "test.php", content)
 
-	got, err := FileChecksum(filepath.Join(dir, "test.php"))
+	files, err := CollectPHPFiles(filepath.Join(dir, "test.php"), nil, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if len(files) != 1 {
+		t.Fatalf("got %d files, want 1", len(files))
+	}
 
 	expected := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-	if got != expected {
-		t.Errorf("checksum = %q, want %q", got, expected)
+	if files[0].Checksum != expected {
+		t.Errorf("checksum = %q, want %q", files[0].Checksum, expected)
 	}
 }
 
@@ -173,7 +176,7 @@ func TestReadContent_Normal(t *testing.T) {
 	content := "<?php echo 'test';"
 	writeFile(t, dir, "test.php", content)
 
-	got, err := ReadContent(filepath.Join(dir, "test.php"))
+	got, err := ReadContent(filepath.Join(dir, "test.php"), 0, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -182,37 +185,124 @@ func TestReadContent_Normal(t *testing.T) {
 	}
 }
 
-func TestReadContent_Truncation(t *testing.T) {
+func TestReadContent_ChunkOffset(t *testing.T) {
 	dir := t.TempDir()
-	// Create a file larger than MaxFileSize
-	content := strings.Repeat("x", MaxFileSize+100)
-	writeFile(t, dir, "big.php", content)
+	content := "AAAAABBBBB"
+	writeFile(t, dir, "test.php", content)
 
-	got, err := ReadContent(filepath.Join(dir, "big.php"))
+	got, err := ReadContent(filepath.Join(dir, "test.php"), 5, 5)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.HasSuffix(got, "\n... [truncated]") {
-		t.Error("truncated file should end with truncation marker")
-	}
-	// Content before marker should be exactly MaxFileSize bytes
-	parts := strings.SplitN(got, "\n... [truncated]", 2)
-	if len(parts[0]) != MaxFileSize {
-		t.Errorf("truncated content length = %d, want %d", len(parts[0]), MaxFileSize)
+	if got != "BBBBB" {
+		t.Errorf("content = %q, want %q", got, "BBBBB")
 	}
 }
 
-func TestReadContent_ExactlyMaxSize(t *testing.T) {
+func TestCollectPHPFiles_SmallFileNoChunking(t *testing.T) {
 	dir := t.TempDir()
-	content := strings.Repeat("x", MaxFileSize)
+	content := strings.Repeat("x", ChunkSize)
 	writeFile(t, dir, "exact.php", content)
 
-	got, err := ReadContent(filepath.Join(dir, "exact.php"))
+	files, err := CollectPHPFiles(dir, nil, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if strings.Contains(got, "[truncated]") {
-		t.Error("file exactly at max size should NOT be truncated")
+	if len(files) != 1 {
+		t.Fatalf("got %d files, want 1 (no chunking at exactly ChunkSize)", len(files))
+	}
+	if strings.Contains(files[0].RelPath, "[") {
+		t.Errorf("small file should not have chunk suffix: %s", files[0].RelPath)
+	}
+	if files[0].ChunkOffset != 0 || files[0].ChunkLen != 0 {
+		t.Error("small file should have zero chunk offset/len")
+	}
+}
+
+func TestCollectPHPFiles_LargeFileChunking(t *testing.T) {
+	dir := t.TempDir()
+	// Create file just over ChunkSize to produce 2 chunks
+	size := ChunkSize + 100
+	content := strings.Repeat("A", ChunkSize-10) + strings.Repeat("B", 110)
+	if len(content) != size {
+		t.Fatalf("test setup: content length %d, want %d", len(content), size)
+	}
+	writeFile(t, dir, "big.php", content)
+
+	files, err := CollectPHPFiles(dir, nil, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("got %d files, want 2 chunks", len(files))
+	}
+
+	// Check suffixes
+	if files[0].RelPath != "big.php [1/2]" {
+		t.Errorf("chunk 1 RelPath = %q, want %q", files[0].RelPath, "big.php [1/2]")
+	}
+	if files[1].RelPath != "big.php [2/2]" {
+		t.Errorf("chunk 2 RelPath = %q, want %q", files[1].RelPath, "big.php [2/2]")
+	}
+
+	// First chunk starts at 0
+	if files[0].ChunkOffset != 0 {
+		t.Errorf("chunk 1 offset = %d, want 0", files[0].ChunkOffset)
+	}
+	if files[0].ChunkLen != ChunkSize {
+		t.Errorf("chunk 1 len = %d, want %d", files[0].ChunkLen, ChunkSize)
+	}
+
+	// Second chunk starts at ChunkSize - ChunkOverlap (overlap)
+	expectedOffset := ChunkSize - ChunkOverlap
+	if files[1].ChunkOffset != expectedOffset {
+		t.Errorf("chunk 2 offset = %d, want %d", files[1].ChunkOffset, expectedOffset)
+	}
+
+	// Verify overlap - last ChunkOverlap bytes of chunk 1 should match first ChunkOverlap bytes of chunk 2
+	c1, _ := ReadContent(files[0].AbsPath, files[0].ChunkOffset, files[0].ChunkLen)
+	c2, _ := ReadContent(files[1].AbsPath, files[1].ChunkOffset, files[1].ChunkLen)
+	overlap1 := c1[len(c1)-ChunkOverlap:]
+	overlap2 := c2[:ChunkOverlap]
+	if overlap1 != overlap2 {
+		t.Error("chunks should overlap by ChunkOverlap bytes")
+	}
+
+	// Checksums should differ (different content)
+	if files[0].Checksum == files[1].Checksum {
+		t.Error("chunks with different content should have different checksums")
+	}
+
+	// Checksums should match content
+	expected0 := fmt.Sprintf("%x", sha256.Sum256([]byte(c1)))
+	if files[0].Checksum != expected0 {
+		t.Errorf("chunk 1 checksum mismatch")
+	}
+	expected1 := fmt.Sprintf("%x", sha256.Sum256([]byte(c2)))
+	if files[1].Checksum != expected1 {
+		t.Errorf("chunk 2 checksum mismatch")
+	}
+}
+
+func TestCollectPHPFiles_LargeFileChunkCount(t *testing.T) {
+	dir := t.TempDir()
+	// 1.2MB file
+	size := 1_200_000
+	content := strings.Repeat("x", size)
+	writeFile(t, dir, "huge.php", content)
+
+	files, err := CollectPHPFiles(dir, nil, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// step = 400000 - 20000 = 380000
+	// chunks: 0-400000, 380000-780000, 760000-1160000, 1140000-1200000
+	if len(files) != 4 {
+		t.Fatalf("got %d chunks, want 4 for 1.2MB file", len(files))
+	}
+	if files[3].RelPath != "huge.php [4/4]" {
+		t.Errorf("last chunk RelPath = %q, want %q", files[3].RelPath, "huge.php [4/4]")
 	}
 }
 
