@@ -59,6 +59,13 @@ type InsecureFile struct {
 	Details  string
 }
 
+// WarningFile represents a file with a warning (not clean, not insecure).
+type WarningFile struct {
+	Path     string
+	Checksum string
+	Details  string
+}
+
 // ErrorFile represents a file where analysis failed.
 type ErrorFile struct {
 	Path     string
@@ -72,9 +79,11 @@ type ScanSummary struct {
 	UniqueFiles   int
 	SecureCount   int
 	InsecureCount int
+	WarningCount  int
 	ErrorCount    int
 	SkippedCount  int
 	InsecureFiles []InsecureFile
+	WarningFiles  []WarningFile
 	ErrorFiles    []ErrorFile
 }
 
@@ -114,6 +123,16 @@ func BuildSummary(files []collector.PHPFile, results map[string]api.FileResult) 
 			continue
 		}
 
+		if result.Secure == "warning" {
+			summary.WarningCount++
+			summary.WarningFiles = append(summary.WarningFiles, WarningFile{
+				Path:     f.RelPath,
+				Checksum: f.Checksum,
+				Details:  result.Details,
+			})
+			continue
+		}
+
 		if result.Secure == "yes" {
 			summary.SecureCount++
 			continue
@@ -139,8 +158,13 @@ func BuildSummary(files []collector.PHPFile, results map[string]api.FileResult) 
 	return summary
 }
 
-// ShouldFail returns true if any insecure file meets or exceeds the fail-on level.
-func ShouldFail(summary ScanSummary, failOn string) bool {
+// ShouldFail returns true if any finding meets the configured thresholds.
+// failOn controls the minimum risk level for insecure files.
+// failOnWarning controls whether warnings cause failure independently.
+func ShouldFail(summary ScanSummary, failOn string, failOnWarning bool) bool {
+	if failOnWarning && summary.WarningCount > 0 {
+		return true
+	}
 	threshold := ParseRiskLevel(failOn)
 	for _, f := range summary.InsecureFiles {
 		if f.Risk >= threshold {

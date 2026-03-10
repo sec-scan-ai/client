@@ -87,7 +87,16 @@ func matchFramework(packages map[string]string, projectName string) string {
 
 	// Magento
 	if strings.Contains(keysLower, "magento/") {
-		return "Magento"
+		if _, ok := packages["magento/framework"]; ok {
+			return "Magento 2"
+		}
+		if _, ok := packages["magento/product-community-edition"]; ok {
+			return "Magento 2"
+		}
+		if _, ok := packages["magento/product-enterprise-edition"]; ok {
+			return "Magento 2"
+		}
+		return "Magento 1"
 	}
 
 	// WordPress/WooCommerce

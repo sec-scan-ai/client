@@ -69,6 +69,7 @@ type ProgressSpinner struct {
 	high      atomic.Int32
 	medium    atomic.Int32
 	low       atomic.Int32
+	warnings  atomic.Int32
 	stop      chan struct{}
 	wg        sync.WaitGroup
 }
@@ -115,6 +116,11 @@ func (s *ProgressSpinner) IncrementRisk(risk string) {
 	}
 }
 
+// IncrementWarning increments the warning counter.
+func (s *ProgressSpinner) IncrementWarning() {
+	s.warnings.Add(1)
+}
+
 // SetCancelled marks the spinner as cancelled (waiting for in-flight requests).
 func (s *ProgressSpinner) SetCancelled() {
 	s.cancelled.Store(true)
@@ -147,6 +153,9 @@ func (s *ProgressSpinner) riskSuffix() string {
 	}
 	if v := s.low.Load(); v > 0 {
 		parts = append(parts, fmt.Sprintf("%d low", v))
+	}
+	if v := s.warnings.Load(); v > 0 {
+		parts = append(parts, fmt.Sprintf("%d warnings", v))
 	}
 	if len(parts) == 0 {
 		return ""

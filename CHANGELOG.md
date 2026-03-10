@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.4.0
+
+### Warning status for unanalyzable files
+
+Files that cannot be classified as clean or insecure (e.g. ionCube or Zend Guard encrypted files) are now reported as warnings instead of being silently skipped. Warnings are shown in both text and JSON output with their own counter in the summary.
+
+Warnings cause exit code 1 by default. Use `--fail-on-warning=false` to treat them as informational. This is a separate control from `--fail-on`, which only applies to insecure file risk levels - because an unanalyzable file could be hiding anything.
+
+### Magento 1/2 detection
+
+Framework detection now distinguishes Magento 1 and Magento 2. Magento 2 is identified by the presence of `magento/framework`, `magento/product-community-edition`, or `magento/product-enterprise-edition` in composer. Any other `magento/` package without these is detected as Magento 1.
+
 ## v0.3.3
 
 ### Chunked analysis for large files

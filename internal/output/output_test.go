@@ -39,18 +39,20 @@ func TestBuildSummary_Counts(t *testing.T) {
 		{RelPath: "vuln.php", Checksum: "bbb"},
 		{RelPath: "error.php", Checksum: "ccc"},
 		{RelPath: "missing.php", Checksum: "ddd"},
+		{RelPath: "encoded.php", Checksum: "eee"},
 	}
 	results := map[string]api.FileResult{
 		"aaa": {Secure: "yes", Risk: "low"},
 		"bbb": {Secure: "no", Risk: "high", Details: "SQLi"},
 		"ccc": {Secure: "error", Details: "analysis timeout"},
 		// "ddd" intentionally missing
+		"eee": {Secure: "warning", Details: "ionCube encoded - cannot analyze"},
 	}
 
 	summary := BuildSummary(files, results)
 
-	if summary.TotalFiles != 4 {
-		t.Errorf("TotalFiles = %d, want 4", summary.TotalFiles)
+	if summary.TotalFiles != 5 {
+		t.Errorf("TotalFiles = %d, want 5", summary.TotalFiles)
 	}
 	if summary.SecureCount != 1 {
 		t.Errorf("SecureCount = %d, want 1", summary.SecureCount)
@@ -58,11 +60,23 @@ func TestBuildSummary_Counts(t *testing.T) {
 	if summary.InsecureCount != 1 {
 		t.Errorf("InsecureCount = %d, want 1", summary.InsecureCount)
 	}
+	if summary.WarningCount != 1 {
+		t.Errorf("WarningCount = %d, want 1", summary.WarningCount)
+	}
 	if summary.ErrorCount != 1 {
 		t.Errorf("ErrorCount = %d, want 1 (server error only)", summary.ErrorCount)
 	}
 	if summary.SkippedCount != 1 {
 		t.Errorf("SkippedCount = %d, want 1 (missing result)", summary.SkippedCount)
+	}
+	if len(summary.WarningFiles) != 1 {
+		t.Fatalf("WarningFiles count = %d, want 1", len(summary.WarningFiles))
+	}
+	if summary.WarningFiles[0].Path != "encoded.php" {
+		t.Errorf("WarningFiles[0].Path = %q, want encoded.php", summary.WarningFiles[0].Path)
+	}
+	if summary.WarningFiles[0].Details != "ionCube encoded - cannot analyze" {
+		t.Errorf("WarningFiles[0].Details = %q, want ionCube message", summary.WarningFiles[0].Details)
 	}
 }
 
@@ -322,28 +336,96 @@ func captureStdout(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
+func TestRenderText_WithWarnings(t *testing.T) {
+	summary := ScanSummary{
+		TotalFiles:   2,
+		UniqueFiles:  2,
+		SecureCount:  1,
+		WarningCount: 1,
+		WarningFiles: []WarningFile{
+			{Path: "encoded.php", Checksum: "abc123", Details: "ionCube encoded - cannot analyze"},
+		},
+	}
+
+	out := captureStdout(t, func() { RenderText(summary) })
+
+	if !strings.Contains(out, "Warnings:") {
+		t.Errorf("expected Warnings label, got:\n%s", out)
+	}
+	if !strings.Contains(out, "encoded.php") {
+		t.Errorf("expected file path, got:\n%s", out)
+	}
+	if !strings.Contains(out, "ionCube encoded") {
+		t.Errorf("expected details, got:\n%s", out)
+	}
+	if strings.Contains(out, "All files are clean.") {
+		t.Errorf("should not show all-clean message when there are warnings, got:\n%s", out)
+	}
+}
+
+func TestRenderJSON_WithWarnings(t *testing.T) {
+	summary := ScanSummary{
+		TotalFiles:   2,
+		UniqueFiles:  2,
+		SecureCount:  1,
+		WarningCount: 1,
+		WarningFiles: []WarningFile{
+			{Path: "encoded.php", Checksum: "abc123", Details: "ionCube encoded"},
+		},
+	}
+
+	out := captureStdout(t, func() { RenderJSON(summary, 0) })
+
+	var result jsonOutput
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("invalid JSON output: %v\nraw: %s", err, out)
+	}
+
+	if result.Summary.Warnings != 1 {
+		t.Errorf("warnings = %d, want 1", result.Summary.Warnings)
+	}
+	if len(result.Files) != 1 {
+		t.Fatalf("files count = %d, want 1", len(result.Files))
+	}
+	if result.Files[0].Secure != "warning" {
+		t.Errorf("files[0].secure = %q, want warning", result.Files[0].Secure)
+	}
+	if result.Files[0].Details != "ionCube encoded" {
+		t.Errorf("files[0].details = %q, want ionCube encoded", result.Files[0].Details)
+	}
+}
+
 func TestShouldFail(t *testing.T) {
 	tests := []struct {
-		name   string
-		risks  []string
-		failOn string
-		want   bool
+		name          string
+		risks         []string
+		warnings      int
+		failOn        string
+		failOnWarning bool
+		want          bool
 	}{
-		{"no files", nil, "low", false},
-		{"low meets low", []string{"low"}, "low", true},
-		{"low below medium", []string{"low"}, "medium", false},
-		{"medium meets medium", []string{"medium"}, "medium", true},
-		{"medium below high", []string{"medium"}, "high", false},
-		{"high meets high", []string{"high"}, "high", true},
-		{"high below critical", []string{"high"}, "critical", false},
-		{"critical meets critical", []string{"critical"}, "critical", true},
-		{"mixed - one meets threshold", []string{"low", "high"}, "high", true},
-		{"mixed - none meets threshold", []string{"low", "medium"}, "high", false},
+		{"no files", nil, 0, "low", true, false},
+		{"low meets low", []string{"low"}, 0, "low", true, true},
+		{"low below medium", []string{"low"}, 0, "medium", true, false},
+		{"medium meets medium", []string{"medium"}, 0, "medium", true, true},
+		{"medium below high", []string{"medium"}, 0, "high", true, false},
+		{"high meets high", []string{"high"}, 0, "high", true, true},
+		{"high below critical", []string{"high"}, 0, "critical", true, false},
+		{"critical meets critical", []string{"critical"}, 0, "critical", true, true},
+		{"mixed - one meets threshold", []string{"low", "high"}, 0, "high", true, true},
+		{"mixed - none meets threshold", []string{"low", "medium"}, 0, "high", true, false},
+		// Warning tests
+		{"warning with fail-on-warning true", nil, 1, "low", true, true},
+		{"warning with fail-on-warning false", nil, 1, "low", false, false},
+		{"no warning with fail-on-warning true", nil, 0, "low", true, false},
+		{"warning and insecure with fail-on-warning true", []string{"high"}, 1, "low", true, true},
+		{"warning and insecure with fail-on-warning false", []string{"high"}, 1, "low", false, true},
+		{"only warning fail-on-warning false insecure below threshold", []string{"low"}, 1, "high", false, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			summary := ScanSummary{}
+			summary := ScanSummary{WarningCount: tt.warnings}
 			for _, r := range tt.risks {
 				summary.InsecureFiles = append(summary.InsecureFiles, InsecureFile{
 					Risk:    ParseRiskLevel(r),
@@ -351,9 +433,10 @@ func TestShouldFail(t *testing.T) {
 				})
 			}
 
-			got := ShouldFail(summary, tt.failOn)
+			got := ShouldFail(summary, tt.failOn, tt.failOnWarning)
 			if got != tt.want {
-				t.Errorf("ShouldFail(risks=%v, failOn=%q) = %v, want %v", tt.risks, tt.failOn, got, tt.want)
+				t.Errorf("ShouldFail(risks=%v, warnings=%d, failOn=%q, failOnWarning=%v) = %v, want %v",
+					tt.risks, tt.warnings, tt.failOn, tt.failOnWarning, got, tt.want)
 			}
 		})
 	}

@@ -14,6 +14,7 @@ var (
 	colorHigh     = color.New(color.FgRed)
 	colorMedium   = color.New(color.FgYellow)
 	colorLow      = color.New(color.FgCyan)
+	colorWarning  = color.New(color.FgYellow)
 	colorSecure   = color.New(color.FgGreen)
 	colorError    = color.New(color.FgMagenta)
 	colorBold     = color.New(color.Bold)
@@ -44,6 +45,9 @@ func RenderText(summary ScanSummary) {
 	} else {
 		fmt.Fprintf(w, "%-16s%d\n", "Insecure:", 0)
 	}
+	if summary.WarningCount > 0 {
+		colorWarning.Fprintf(w, "%-16s%d\n", "Warnings:", summary.WarningCount)
+	}
 	if summary.ErrorCount > 0 {
 		colorError.Fprintf(w, "%-16s%d\n", "Errors:", summary.ErrorCount)
 	}
@@ -59,6 +63,13 @@ func RenderText(summary ScanSummary) {
 		fmt.Fprintf(w, "   Details:  %s\n", f.Details)
 	}
 
+	for _, f := range summary.WarningFiles {
+		fmt.Fprintln(w)
+		colorWarning.Fprintf(w, "-- [WARNING] %s\n", f.Path)
+		fmt.Fprintf(w, "   Hash:     %s\n", f.Checksum)
+		fmt.Fprintf(w, "   Details:  %s\n", f.Details)
+	}
+
 	for _, f := range summary.ErrorFiles {
 		fmt.Fprintln(w)
 		colorError.Fprintf(w, "?? ERROR:    %s\n", f.Path)
@@ -66,7 +77,7 @@ func RenderText(summary ScanSummary) {
 		fmt.Fprintf(w, "   Details:  %s\n", f.Details)
 	}
 
-	if summary.InsecureCount == 0 && summary.ErrorCount == 0 {
+	if summary.InsecureCount == 0 && summary.WarningCount == 0 && summary.ErrorCount == 0 {
 		fmt.Fprintln(w)
 		colorSecure.Fprintln(w, "All files are clean.")
 	}

@@ -51,6 +51,11 @@ func NewRootCmd() *cobra.Command {
 				cfg.Force = true
 			}
 
+			// Track if --fail-on-warning was explicitly set
+			if cmd.Flags().Changed("fail-on-warning") {
+				cfg.FailOnWarningSet = true
+			}
+
 			cfg.ResolveEnv()
 			if err := cfg.Validate(); err != nil {
 				return err
@@ -70,6 +75,7 @@ func NewRootCmd() *cobra.Command {
 	flags.BoolVar(&cfg.Force, "force", false, "Force re-analysis of all files (skip lookup)")
 	flags.Bool("force-check", false, "Alias for --force")
 	flags.StringVar(&cfg.FailOn, "fail-on", "", "Minimum risk level for exit code 1: low|medium|high|critical (env: SEC_SCAN_FAIL_ON)")
+	flags.BoolVar(&cfg.FailOnWarning, "fail-on-warning", true, "Exit code 1 when warnings are found (env: SEC_SCAN_FAIL_ON_WARNING)")
 	flags.BoolVarP(&cfg.Quiet, "quiet", "q", false, "Suppress progress output (env: SEC_SCAN_QUIET)")
 	flags.StringVarP(&cfg.Output, "output", "o", "", "Output format: text|json (env: SEC_SCAN_OUTPUT)")
 	flags.BoolVar(&cfg.NoFollowSymlinks, "no-follow-symlinks", false, "Do not follow symlinks")
@@ -319,8 +325,12 @@ func runScan(cfg *config.Config) int {
 				mu.Lock()
 				for k, v := range fileResults {
 					results[k] = v
-					if progress != nil && v.Secure == "no" {
-						progress.IncrementRisk(v.Risk)
+					if progress != nil {
+						if v.Secure == "no" {
+							progress.IncrementRisk(v.Risk)
+						} else if v.Secure == "warning" {
+							progress.IncrementWarning()
+						}
 					}
 				}
 				mu.Unlock()
@@ -347,7 +357,7 @@ func runScan(cfg *config.Config) int {
 
 	// Build summary and render
 	summary := output.BuildSummary(files, results)
-	shouldFail := output.ShouldFail(summary, cfg.FailOn)
+	shouldFail := output.ShouldFail(summary, cfg.FailOn, cfg.FailOnWarning)
 
 	exitCode := 0
 	if shouldFail {

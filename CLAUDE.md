@@ -17,8 +17,23 @@ Go CLI client for the sec-scan.ai PHP security scanner. Collects PHP files from 
 4. Auth: `Authorization: Bearer sc_<base64>` header
 5. `--force` skips lookup, sends all files for re-analysis
 
+### Analysis result statuses
+The server returns a `secure` field per file with one of these values:
+- `"yes"` - file is clean
+- `"no"` - file is insecure, `risk` field contains severity (low/medium/high/critical), `details` has explanation
+- `"warning"` - file cannot be classified as clean or insecure (e.g. ionCube encrypted), `details` has explanation
+- `"error"` - analysis failed, `details` has reason
+
+### Exit code logic
+Two independent controls determine exit code 1:
+- `--fail-on` (default: `low`) - minimum risk level for insecure files
+- `--fail-on-warning` (default: `true`) - whether warnings cause failure independently
+
+These are separate because warnings (unanalyzable files) are a different concern than insecure findings - a warning could be hiding anything, including critical vulnerabilities.
+
 ## Key Design Decisions
 - Framework detection prefers `composer.lock` (exact versions) over `composer.json` (version constraints), walks up from scan dir only (no walk-down)
+- Magento is split into Magento 1 and Magento 2 - detection checks for M2-specific packages (`magento/framework`, `magento/product-community-edition`, `magento/product-enterprise-edition`)
 - Server provides default exclude dirs per framework (cache dirs, compiled templates) - fetched once and cached 24h in `~/.sec-scan/framework-cache.json`
 - `vendor/` is never in default excludes - plugins/extensions installed via Composer must be scanned
 - Excludes match relative paths from scan root (not directory names globally) - security choice to prevent attackers hiding webshells in known-excluded directory names
@@ -27,7 +42,6 @@ Go CLI client for the sec-scan.ai PHP security scanner. Collects PHP files from 
 - Auto-cancels on 401 (auth failure) and 429 (rate limit) to avoid wasting requests
 - Per-request context timeouts (not shared http.Client.Timeout) for concurrency safety
 - First-run setup creates `~/.sec-scan/` and prompts for API token
-- `SEC_SCAN_SERVER` env var exists for internal/dev use but is undocumented - default is always `https://sec-scan.ai`
 - Ignore file (`~/.sec-scan/ignore`) must never be inside the scan directory - security risk (attacker could plant one to suppress webshell detection)
 - Large files (>400KB) are split into overlapping 400KB chunks (20KB overlap) - prevents attackers from hiding malicious code beyond a truncation point. Each chunk is analyzed independently and appears as a separate entry with a `[1/3]` suffix. No merging of results.
 

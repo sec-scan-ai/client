@@ -17,6 +17,7 @@ type jsonSummary struct {
 	UniqueFiles int `json:"uniqueFiles"`
 	Secure      int `json:"secure"`
 	Insecure    int `json:"insecure"`
+	Warnings    int `json:"warnings"`
 	Errors      int `json:"errors"`
 	Skipped     int `json:"skipped,omitempty"`
 }
@@ -37,10 +38,11 @@ func RenderJSON(summary ScanSummary, exitCode int) {
 			UniqueFiles: summary.UniqueFiles,
 			Secure:      summary.SecureCount,
 			Insecure:    summary.InsecureCount,
+			Warnings:    summary.WarningCount,
 			Errors:      summary.ErrorCount,
 			Skipped:     summary.SkippedCount,
 		},
-		Files:    make([]jsonFileResult, 0, len(summary.InsecureFiles)+len(summary.ErrorFiles)),
+		Files:    make([]jsonFileResult, 0, len(summary.InsecureFiles)+len(summary.WarningFiles)+len(summary.ErrorFiles)),
 		ExitCode: exitCode,
 	}
 
@@ -50,6 +52,15 @@ func RenderJSON(summary ScanSummary, exitCode int) {
 			Checksum: f.Checksum,
 			Secure:   "no",
 			Risk:     f.RiskStr,
+			Details:  f.Details,
+		})
+	}
+
+	for _, f := range summary.WarningFiles {
+		out.Files = append(out.Files, jsonFileResult{
+			Path:     f.Path,
+			Checksum: f.Checksum,
+			Secure:   "warning",
 			Details:  f.Details,
 		})
 	}

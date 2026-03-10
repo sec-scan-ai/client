@@ -4,7 +4,7 @@ Command-line client for [sec-scan.ai](https://sec-scan.ai) - AI-powered PHP secu
 
 Malware scanners tell you you've been hacked. sec-scan finds the vulnerable code that let it happen - SQL injection, SSRF, unrestricted uploads, backdoors - so you can fix the cause, not just clean up the mess.
 
-Built with deep knowledge of OXID eShop, Shopware, Magento, and other PHP frameworks to deliver near-zero false positives.
+Built with deep knowledge of OXID eShop, Shopware, Magento 1/2, and other PHP frameworks to deliver near-zero false positives.
 
 ## How it works
 
@@ -55,7 +55,7 @@ You should see one clean file, one high-risk finding, and one critical finding.
 sec-scan /path/to/project
 
 # Exclude directories (paths relative to scan root)
-sec-scan /path/to/project --exclude vendor --exclude admin/templates_c
+sec-scan /path/to/project --exclude var/cache --exclude admin/templates_c
 
 # Force re-analysis of all files (skip cache)
 sec-scan /path/to/project --force
@@ -65,6 +65,9 @@ sec-scan /path/to/project --output json
 
 # Fail only on high or critical findings (default: low)
 sec-scan /path/to/project --fail-on high
+
+# Don't fail on warnings (e.g. encrypted files that can't be analyzed)
+sec-scan /path/to/project --fail-on-warning=false
 
 # Quiet mode - only show results, no progress
 sec-scan /path/to/project --quiet
@@ -92,6 +95,7 @@ sec-scan /path/to/project --ignore-file /etc/sec-scan/ignore
 | `--framework` | `-f` | `SEC_SCAN_FRAMEWORK` | auto-detect | PHP framework hint |
 | `--force` | - | - | `false` | Re-analyze all files, skip cache |
 | `--fail-on` | - | `SEC_SCAN_FAIL_ON` | `low` | Minimum risk level for exit code 1 |
+| `--fail-on-warning` | - | `SEC_SCAN_FAIL_ON_WARNING` | `true` | Exit code 1 when warnings are found |
 | `--quiet` | `-q` | `SEC_SCAN_QUIET` | `false` | Suppress progress output |
 | `--output` | `-o` | `SEC_SCAN_OUTPUT` | `text` | Output format: `text` or `json` |
 | `--no-follow-symlinks` | - | - | `false` | Do not follow symlinks |
@@ -148,17 +152,20 @@ The checksum is shown in the scan output next to each finding. If the file conte
 
 | Code | Meaning |
 |------|---------|
-| `0` | All files clean (or below `--fail-on` threshold) |
-| `1` | Vulnerabilities found at or above `--fail-on` level |
+| `0` | All files clean (or below `--fail-on` threshold and no warnings, or `--fail-on-warning=false`) |
+| `1` | Vulnerabilities found at or above `--fail-on` level, or warnings found (unless `--fail-on-warning=false`) |
 
 ## CI/CD integration
 
 ```bash
-# Fail the pipeline on high or critical findings
-sec-scan /path/to/project --output json --quiet --fail-on high
+# Fail the pipeline on high or critical findings, ignore warnings
+sec-scan /path/to/project --output json --quiet --fail-on high --fail-on-warning=false
 
 # Parse JSON output
 sec-scan /path/to/project --output json --quiet | jq '.files[] | select(.risk == "critical")'
+
+# Parse warnings from JSON output
+sec-scan /path/to/project --output json --quiet | jq '.files[] | select(.secure == "warning")'
 ```
 
 ## Risk levels
@@ -170,13 +177,19 @@ sec-scan /path/to/project --output json --quiet | jq '.files[] | select(.risk ==
 | **medium** | Exploitable under specific conditions |
 | **low** | Minor issues, informational |
 
+## Warnings
+
+Some files cannot be classified as clean or insecure. These are reported as warnings with details explaining why. Examples include files encrypted with ionCube or similar encoders that prevent analysis.
+
+Warnings cause exit code 1 by default. Use `--fail-on-warning=false` to treat them as informational.
+
 ## Supported frameworks
 
 sec-scan auto-detects frameworks from `composer.lock` (preferred) or `composer.json` and adjusts analysis accordingly:
 
 - OXID eShop 6 / 7
 - Shopware 5 / 6
-- Magento
+- Magento 1 / 2
 - Laravel
 - Symfony
 - WordPress / WooCommerce

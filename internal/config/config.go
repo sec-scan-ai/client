@@ -8,25 +8,28 @@ import (
 )
 
 const (
-	DefaultServer    = "https://sec-scan.ai"
-	DefaultBatchSize = 10
-	MinBatchSize     = 1
-	MaxBatchSize     = 50
-	DefaultFailOn    = "low"
-	DefaultOutput    = "text"
+	DefaultServer        = "https://sec-scan.ai"
+	DefaultBatchSize     = 10
+	MinBatchSize         = 1
+	MaxBatchSize         = 50
+	DefaultFailOn        = "low"
+	DefaultFailOnWarning = true
+	DefaultOutput        = "text"
 )
 
 // Config holds all resolved configuration for a scan run.
 type Config struct {
-	Server           string
-	Token            string
-	BatchSize        int
-	Excludes         []string
-	Framework        string
-	Force            bool
-	FailOn           string
-	Quiet            bool
-	Output           string
+	Server            string
+	Token             string
+	BatchSize         int
+	Excludes          []string
+	Framework         string
+	Force             bool
+	FailOn            string
+	FailOnWarning     bool
+	FailOnWarningSet  bool // true if explicitly set via flag or env
+	Quiet             bool
+	Output            string
 	NoFollowSymlinks  bool
 	NoDefaultExcludes bool
 	DryRun            bool
@@ -71,6 +74,16 @@ func (c *Config) ResolveEnv() {
 		} else {
 			c.FailOn = DefaultFailOn
 		}
+	}
+	if !c.FailOnWarningSet {
+		if v := os.Getenv("SEC_SCAN_FAIL_ON_WARNING"); v != "" {
+			c.FailOnWarning = isTruthy(v)
+			c.FailOnWarningSet = true
+		}
+	}
+	if !c.FailOnWarningSet {
+		c.FailOnWarning = DefaultFailOnWarning
+		c.FailOnWarningSet = true
 	}
 	if !c.Quiet {
 		c.Quiet = isTruthy(os.Getenv("SEC_SCAN_QUIET"))

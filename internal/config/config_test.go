@@ -229,6 +229,38 @@ func TestQuietTruthyValues(t *testing.T) {
 	}
 }
 
+func TestResolveEnv_FailOnWarningDefault(t *testing.T) {
+	clearEnv(t)
+	c := &Config{}
+	c.ResolveEnv()
+
+	if !c.FailOnWarning {
+		t.Error("FailOnWarning should default to true")
+	}
+}
+
+func TestResolveEnv_FailOnWarningEnv(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("SEC_SCAN_FAIL_ON_WARNING", "false")
+	c := &Config{}
+	c.ResolveEnv()
+
+	if c.FailOnWarning {
+		t.Error("FailOnWarning should be false when env is 'false'")
+	}
+}
+
+func TestResolveEnv_FailOnWarningFlagTakesPrecedence(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("SEC_SCAN_FAIL_ON_WARNING", "true")
+	c := &Config{FailOnWarning: false, FailOnWarningSet: true}
+	c.ResolveEnv()
+
+	if c.FailOnWarning {
+		t.Error("FailOnWarning flag (false) should take precedence over env (true)")
+	}
+}
+
 func TestResolveEnv_InvalidBatchSize(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("SEC_SCAN_BATCH_SIZE", "not-a-number")
@@ -245,7 +277,7 @@ func clearEnv(t *testing.T) {
 	t.Helper()
 	envVars := []string{
 		"SEC_SCAN_SERVER", "SEC_SCAN_TOKEN", "SEC_SCAN_BATCH_SIZE",
-		"SEC_SCAN_FRAMEWORK", "SEC_SCAN_FAIL_ON", "SEC_SCAN_QUIET", "SEC_SCAN_OUTPUT",
+		"SEC_SCAN_FRAMEWORK", "SEC_SCAN_FAIL_ON", "SEC_SCAN_FAIL_ON_WARNING", "SEC_SCAN_QUIET", "SEC_SCAN_OUTPUT",
 	}
 	for _, key := range envVars {
 		old, existed := os.LookupEnv(key)

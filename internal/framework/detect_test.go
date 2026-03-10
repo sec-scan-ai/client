@@ -63,9 +63,29 @@ func TestDetect_Frameworks(t *testing.T) {
 			want:     "Symfony",
 		},
 		{
-			name:     "Magento",
+			name:     "Magento 2 via framework",
 			composer: `{"require": {"magento/framework": "^103.0"}}`,
-			want:     "Magento",
+			want:     "Magento 2",
+		},
+		{
+			name:     "Magento 2 via product-community-edition",
+			composer: `{"require": {"magento/product-community-edition": "2.4.6"}}`,
+			want:     "Magento 2",
+		},
+		{
+			name:     "Magento 2 via product-enterprise-edition",
+			composer: `{"require": {"magento/product-enterprise-edition": "2.4.6"}}`,
+			want:     "Magento 2",
+		},
+		{
+			name:     "Magento 1",
+			composer: `{"require": {"magento/core": "^1.9", "magento-hackathon/magento-composer-installer": "^3.0"}}`,
+			want:     "Magento 1",
+		},
+		{
+			name:     "Magento 1 generic module",
+			composer: `{"require": {"magento/zend-log": "^1.0"}}`,
+			want:     "Magento 1",
 		},
 		{
 			name:     "WordPress via woocommerce",
