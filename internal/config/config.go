@@ -25,6 +25,7 @@ type Config struct {
 	Excludes          []string
 	Framework         string
 	Force             bool
+	Rescan            []string
 	FailOn            string
 	FailOnWarning     bool
 	FailOnWarningSet  bool // true if explicitly set via flag or env
@@ -36,6 +37,9 @@ type Config struct {
 	IgnoreFile        string
 	Path              string
 }
+
+// ValidRescanStatuses are the accepted values for --rescan.
+var ValidRescanStatuses = []string{"low", "medium", "high", "critical", "warning", "error"}
 
 // ValidFailOnLevels are the accepted values for --fail-on.
 var ValidFailOnLevels = []string{"low", "medium", "high", "critical"}
@@ -67,6 +71,11 @@ func (c *Config) ResolveEnv() {
 	}
 	if c.Framework == "" {
 		c.Framework = os.Getenv("SEC_SCAN_FRAMEWORK")
+	}
+	if len(c.Rescan) == 0 {
+		if v := os.Getenv("SEC_SCAN_RESCAN"); v != "" {
+			c.Rescan = strings.Split(v, ",")
+		}
 	}
 	if c.FailOn == "" {
 		if v := os.Getenv("SEC_SCAN_FAIL_ON"); v != "" {
@@ -124,6 +133,19 @@ func (c *Config) Validate() error {
 	c.Output = strings.ToLower(c.Output)
 	if !contains(ValidOutputFormats, c.Output) {
 		return fmt.Errorf("invalid --output format %q (must be one of: %s)", c.Output, strings.Join(ValidOutputFormats, ", "))
+	}
+
+	// Validate rescan statuses
+	for i, s := range c.Rescan {
+		c.Rescan[i] = strings.ToLower(strings.TrimSpace(s))
+		if !contains(ValidRescanStatuses, c.Rescan[i]) {
+			return fmt.Errorf("invalid --rescan value %q (must be one of: %s)", s, strings.Join(ValidRescanStatuses, ", "))
+		}
+	}
+
+	// --force and --rescan are mutually exclusive
+	if c.Force && len(c.Rescan) > 0 {
+		return fmt.Errorf("--force and --rescan cannot be used together (--force already re-analyzes everything)")
 	}
 
 	// Strip trailing slash from server URL

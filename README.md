@@ -60,6 +60,9 @@ sec-scan /path/to/project --exclude var/cache --exclude admin/templates_c
 # Force re-analysis of all files (skip cache)
 sec-scan /path/to/project --force
 
+# Re-analyze only critical/high findings and warnings (selective rescan)
+sec-scan /path/to/project --rescan critical,high,warning
+
 # JSON output for CI pipelines
 sec-scan /path/to/project --output json
 
@@ -94,6 +97,7 @@ sec-scan /path/to/project --ignore-file /etc/sec-scan/ignore
 | `--exclude` | `-e` | - | - | Directories to exclude, relative to scan root (repeatable) |
 | `--framework` | `-f` | `SEC_SCAN_FRAMEWORK` | auto-detect | PHP framework hint |
 | `--force` | - | - | `false` | Re-analyze all files, skip cache |
+| `--rescan` | - | `SEC_SCAN_RESCAN` | - | Re-analyze files matching these statuses (comma-separated: `low`, `medium`, `high`, `critical`, `warning`, `error`) |
 | `--fail-on` | - | `SEC_SCAN_FAIL_ON` | `low` | Minimum risk level for exit code 1 |
 | `--fail-on-warning` | - | `SEC_SCAN_FAIL_ON_WARNING` | `true` | Exit code 1 when warnings are found |
 | `--quiet` | `-q` | `SEC_SCAN_QUIET` | `false` | Suppress progress output |

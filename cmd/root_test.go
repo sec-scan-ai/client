@@ -515,3 +515,94 @@ func captureStdout(t *testing.T, fn func()) string {
 
 	return buf.String()
 }
+
+func TestScan_RescanMode(t *testing.T) {
+	dir := t.TempDir()
+	writePHP(t, dir, "critical.php", "<?php eval($_GET['x']);")
+	writePHP(t, dir, "clean.php", "<?php echo 'hello';")
+	writePHP(t, dir, "warn.php", "<?php /* ioncube */")
+
+	// Compute checksums so mock can return them
+	files, _ := collector.CollectPHPFiles(dir, nil, false)
+	checksumToFile := make(map[string]string)
+	for _, f := range files {
+		checksumToFile[f.Checksum] = f.RelPath
+	}
+
+	var analyzedChecksums []string
+	var analyzeForceFlag atomic.Bool
+
+	server := mockServer(t,
+		func(req apiPkg.LookupRequest) apiPkg.LookupResponse {
+			// Return all files as cached with different statuses
+			results := make(map[string]apiPkg.FileResult)
+			for _, cs := range req.Checksums {
+				name := checksumToFile[cs]
+				switch {
+				case strings.Contains(name, "critical"):
+					results[cs] = apiPkg.FileResult{Secure: "no", Risk: "critical", Details: "backdoor"}
+				case strings.Contains(name, "warn"):
+					results[cs] = apiPkg.FileResult{Secure: "warning", Details: "encrypted"}
+				default:
+					results[cs] = apiPkg.FileResult{Secure: "yes"}
+				}
+			}
+			return apiPkg.LookupResponse{Results: results}
+		},
+		func(req apiPkg.AnalyzeRequest) apiPkg.AnalyzeResponse {
+			analyzeForceFlag.Store(req.Force)
+			results := make(map[string]apiPkg.FileResult)
+			for _, f := range req.Files {
+				analyzedChecksums = append(analyzedChecksums, f.Checksum)
+				results[f.Checksum] = apiPkg.FileResult{Secure: "yes"}
+			}
+			return apiPkg.AnalyzeResponse{Results: results}
+		},
+	)
+	defer server.Close()
+
+	cfg := testConfig(server.URL, dir)
+	cfg.Rescan = []string{"critical", "warning"}
+	runScan(cfg)
+
+	// Should have analyzed exactly the critical and warning files (not the clean one)
+	if len(analyzedChecksums) != 2 {
+		t.Errorf("expected 2 files sent for analysis, got %d", len(analyzedChecksums))
+	}
+
+	// Force flag should be set on analyze requests
+	if !analyzeForceFlag.Load() {
+		t.Error("rescan mode should set force flag on analyze requests")
+	}
+}
+
+func TestScan_RescanWithForce_Invalid(t *testing.T) {
+	cfg := &config.Config{
+		Token:     "sc_test",
+		Server:    "http://localhost",
+		Path:      "/tmp",
+		BatchSize: 10,
+		FailOn:    "low",
+		Output:    "text",
+		Force:     true,
+		Rescan:    []string{"critical"},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error when both --force and --rescan are set")
+	}
+}
+
+func TestScan_RescanInvalidStatus(t *testing.T) {
+	cfg := &config.Config{
+		Token:     "sc_test",
+		Server:    "http://localhost",
+		Path:      "/tmp",
+		BatchSize: 10,
+		FailOn:    "low",
+		Output:    "text",
+		Rescan:    []string{"invalid"},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for invalid rescan status")
+	}
+}

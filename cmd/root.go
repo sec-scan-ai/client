@@ -74,6 +74,7 @@ func NewRootCmd() *cobra.Command {
 	flags.StringVarP(&cfg.Framework, "framework", "f", "", "PHP framework (env: SEC_SCAN_FRAMEWORK, auto-detected if not set)")
 	flags.BoolVar(&cfg.Force, "force", false, "Force re-analysis of all files (skip lookup)")
 	flags.Bool("force-check", false, "Alias for --force")
+	flags.StringSliceVar(&cfg.Rescan, "rescan", nil, "Re-analyze files matching these statuses after lookup: low|medium|high|critical|warning|error (comma-separated, env: SEC_SCAN_RESCAN)")
 	flags.StringVar(&cfg.FailOn, "fail-on", "", "Minimum risk level for exit code 1: low|medium|high|critical (env: SEC_SCAN_FAIL_ON)")
 	flags.BoolVar(&cfg.FailOnWarning, "fail-on-warning", true, "Exit code 1 when warnings are found (env: SEC_SCAN_FAIL_ON_WARNING)")
 	flags.BoolVarP(&cfg.Quiet, "quiet", "q", false, "Suppress progress output (env: SEC_SCAN_QUIET)")
@@ -207,6 +208,7 @@ func runScan(cfg *config.Config) int {
 	results := make(map[string]api.FileResult)
 
 	var toAnalyze []collector.PHPFile
+	forceAnalyze := cfg.Force
 
 	if cfg.Force {
 		// Force mode: analyze all files
@@ -230,21 +232,45 @@ func runScan(cfg *config.Config) int {
 			return 1
 		}
 
-		for k, v := range lookupResp.Results {
-			results[k] = v
+		// Build rescan filter set
+		rescanSet := make(map[string]bool)
+		for _, s := range cfg.Rescan {
+			rescanSet[s] = true
 		}
 
-		output.Progress(cfg.Quiet, "  %d cached, %d need analysis", len(lookupResp.Results), len(lookupResp.Unknown))
+		// Separate cached results into kept and rescan-matched
+		rescanChecksums := make(map[string]bool)
+		for k, v := range lookupResp.Results {
+			if matchesRescan(v, rescanSet) {
+				rescanChecksums[k] = true
+			} else {
+				results[k] = v
+			}
+		}
 
-		// Collect unknown files for analysis
+		rescanCount := len(rescanChecksums)
+		cachedCount := len(lookupResp.Results) - rescanCount
+		unknownCount := len(lookupResp.Unknown)
+		if rescanCount > 0 {
+			output.Progress(cfg.Quiet, "  %d cached, %d need analysis, %d queued for rescan", cachedCount, unknownCount, rescanCount)
+		} else {
+			output.Progress(cfg.Quiet, "  %d cached, %d need analysis", cachedCount, unknownCount)
+		}
+
+		// Collect unknown files and rescan-matched files for analysis
 		unknownSet := make(map[string]bool)
 		for _, cs := range lookupResp.Unknown {
 			unknownSet[cs] = true
 		}
 		for _, uf := range uniqueMap {
-			if unknownSet[uf.file.Checksum] {
+			if unknownSet[uf.file.Checksum] || rescanChecksums[uf.file.Checksum] {
 				toAnalyze = append(toAnalyze, uf.file)
 			}
+		}
+
+		// If any files are being rescanned, force must be set so the server re-analyzes them
+		if rescanCount > 0 {
+			forceAnalyze = true
 		}
 	}
 
@@ -302,7 +328,7 @@ func runScan(cfg *config.Config) int {
 				defer wg.Done()
 				defer func() { <-sem }() // release slot
 
-				fileResults, err := client.Analyze([]api.AnalyzeFile{af}, fw, cfg.Force)
+				fileResults, err := client.Analyze([]api.AnalyzeFile{af}, fw, forceAnalyze)
 				if err != nil {
 					if progress != nil {
 						progress.IncrementError()
@@ -417,4 +443,17 @@ func mergeExcludes(userExcludes, defaultExcludes []string) []string {
 	}
 
 	return result
+}
+
+// matchesRescan checks if a file result matches any of the rescan statuses.
+// For insecure files (secure=="no"), it matches against the risk level (low/medium/high/critical).
+// For warning/error files, it matches against the secure field directly.
+func matchesRescan(r api.FileResult, rescanSet map[string]bool) bool {
+	if len(rescanSet) == 0 {
+		return false
+	}
+	if r.Secure == "no" {
+		return rescanSet[r.Risk]
+	}
+	return rescanSet[r.Secure]
 }

@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.5.0
+
+### Selective rescan by status
+
+New `--rescan` flag to re-analyze only files matching specific statuses from a previous scan. Unlike `--force` which skips the cache entirely, `--rescan` performs a lookup first and only re-sends files that match the specified statuses - saving API credits when you only need to re-check certain findings.
+
+```bash
+# Re-analyze only critical/high findings and warnings
+sec-scan /path/to/project --rescan critical,high,warning
+
+# Re-analyze all warnings (e.g. after updating the analyzer)
+sec-scan /path/to/project --rescan warning
+```
+
+Accepted values: `low`, `medium`, `high`, `critical`, `warning`, `error` (comma-separated). Also configurable via `SEC_SCAN_RESCAN` env var. Mutually exclusive with `--force`.
+
 ## v0.4.0
 
 ### Warning status for unanalyzable files

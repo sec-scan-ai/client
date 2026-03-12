@@ -16,6 +16,7 @@ Go CLI client for the sec-scan.ai PHP security scanner. Collects PHP files from 
 3. `POST /api/files/analyze` -> analysis results (1 file per request, `--batch-size` controls concurrency)
 4. Auth: `Authorization: Bearer sc_<base64>` header
 5. `--force` skips lookup, sends all files for re-analysis
+6. `--rescan` runs lookup, then re-analyzes files matching specified statuses (e.g. `--rescan critical,high,warning`) - mutually exclusive with `--force`
 
 ### Analysis result statuses
 The server returns a `secure` field per file with one of these values:
@@ -44,6 +45,7 @@ These are separate because warnings (unanalyzable files) are a different concern
 - First-run setup creates `~/.sec-scan/` and prompts for API token
 - Ignore file (`~/.sec-scan/ignore`) must never be inside the scan directory - security risk (attacker could plant one to suppress webshell detection)
 - Large files (>400KB) are split into overlapping 400KB chunks (20KB overlap) - prevents attackers from hiding malicious code beyond a truncation point. Each chunk is analyzed independently and appears as a separate entry with a `[1/3]` suffix. No merging of results.
+- `--rescan` does lookup first (unlike `--force`) so only matching files are re-sent - useful for re-checking high-risk findings or warnings without burning API credits on the entire codebase. Sends `force: true` to the server so it actually re-analyzes rather than returning cached results. Has no effect with `--dry-run` (dry-run exits before lookup).
 
 ## Test Files (`test-files/`)
 - `clean.php` - no vulnerabilities (should be flagged clean)
@@ -61,6 +63,9 @@ Quick smoke test: `./sec-scan test-files/`
 - Write a new `## vX.Y.Z` section at the top of `CHANGELOG.md` summarizing those changes
 - Commit, tag (`vX.Y.Z`), push - the CI workflow extracts the latest section from `CHANGELOG.md` and uses it as the GitHub release body automatically
 - `CHANGELOG.md` is the single source of truth for release notes - no separate file to keep in sync
+
+## Documentation
+- When adding new CLI flags or features, always update `README.md` (usage examples in Usage section + row in Options table) in addition to `CLAUDE.md`
 
 ## Testing
 - Build: `make build` / Test: `make test` / Cross-compile: `make all`
