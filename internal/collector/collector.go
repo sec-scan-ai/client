@@ -25,12 +25,18 @@ type PHPFile struct {
 	ChunkLen    int // 0 for non-chunked (means full file)
 }
 
+// ContentFilter transforms file content before hashing. Used to redact
+// credentials so that files with identical code but different credentials
+// produce the same checksum and no secrets are sent to the API.
+type ContentFilter func(content string) string
+
 // CollectPHPFiles walks the target path and returns all .php files.
 // Excludes are matched case-insensitively against relative paths from the scan root.
 // For example, "vendor" only excludes <root>/vendor, not <root>/src/vendor.
 // Use "src/vendor" to exclude <root>/src/vendor specifically.
 // If followSymlinks is true, symlinks are followed with loop detection.
-func CollectPHPFiles(target string, excludes []string, followSymlinks bool) ([]PHPFile, error) {
+// If filter is non-nil, it is applied to file content before computing checksums.
+func CollectPHPFiles(target string, excludes []string, followSymlinks bool, filter ContentFilter) ([]PHPFile, error) {
 	info, err := os.Stat(target)
 	if err != nil {
 		return nil, fmt.Errorf("cannot access %s: %w", target, err)
@@ -40,7 +46,7 @@ func CollectPHPFiles(target string, excludes []string, followSymlinks bool) ([]P
 		if !isPHP(target) {
 			return nil, fmt.Errorf("%s is not a .php file", target)
 		}
-		chunks, err := collectFile(target, target)
+		chunks, err := collectFile(target, target, filter)
 		if err != nil {
 			return nil, err
 		}
@@ -61,7 +67,7 @@ func CollectPHPFiles(target string, excludes []string, followSymlinks bool) ([]P
 	visited := make(map[inode]bool)
 
 	if followSymlinks {
-		err = walkFollowSymlinks(absTarget, absTarget, excludeLower, visited, &files)
+		err = walkFollowSymlinks(absTarget, absTarget, excludeLower, visited, &files, filter)
 	} else {
 		err = filepath.WalkDir(absTarget, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -73,7 +79,7 @@ func CollectPHPFiles(target string, excludes []string, followSymlinks bool) ([]P
 			if d.IsDir() || !isPHP(path) {
 				return nil
 			}
-			chunks, err := collectFile(path, absTarget)
+			chunks, err := collectFile(path, absTarget, filter)
 			if err != nil {
 				return nil // skip unreadable files
 			}
@@ -97,7 +103,8 @@ func sanitizeUTF8(data []byte) string {
 // For non-chunked files (offset=0, length=0), reads the full file.
 // For chunks, reads the specified byte range.
 // Invalid UTF-8 bytes are replaced with U+FFFD to match JSON encoding behavior.
-func ReadContent(path string, offset, length int) (string, error) {
+// If filter is non-nil, it is applied to the content before returning.
+func ReadContent(path string, offset, length int, filter ContentFilter) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
@@ -109,7 +116,11 @@ func ReadContent(path string, offset, length int) (string, error) {
 		}
 		data = data[offset:end]
 	}
-	return sanitizeUTF8(data), nil
+	content := sanitizeUTF8(data)
+	if filter != nil {
+		content = filter(content)
+	}
+	return content, nil
 }
 
 // fileChecksum computes the SHA256 hex digest of content as it would be sent
@@ -124,7 +135,7 @@ type inode struct {
 	ino uint64
 }
 
-func walkFollowSymlinks(root, base string, excludes []string, visited map[inode]bool, files *[]PHPFile) error {
+func walkFollowSymlinks(root, base string, excludes []string, visited map[inode]bool, files *[]PHPFile, filter ContentFilter) error {
 	ino, err := getInode(root)
 	if err != nil {
 		return nil // skip inaccessible
@@ -155,7 +166,7 @@ func walkFollowSymlinks(root, base string, excludes []string, visited map[inode]
 			if shouldExclude(path, base, excludes) {
 				continue
 			}
-			walkFollowSymlinks(path, base, excludes, visited, files)
+			walkFollowSymlinks(path, base, excludes, visited, files, filter)
 			continue
 		}
 
@@ -163,7 +174,7 @@ func walkFollowSymlinks(root, base string, excludes []string, visited map[inode]
 			continue
 		}
 
-		chunks, err := collectFile(path, base)
+		chunks, err := collectFile(path, base, filter)
 		if err != nil {
 			continue // skip unreadable files
 		}
@@ -173,7 +184,7 @@ func walkFollowSymlinks(root, base string, excludes []string, visited map[inode]
 	return nil
 }
 
-func collectFile(path, base string) ([]PHPFile, error) {
+func collectFile(path, base string, filter ContentFilter) ([]PHPFile, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
@@ -198,6 +209,9 @@ func collectFile(path, base string) ([]PHPFile, error) {
 	// Small file - single entry, no chunking
 	if len(data) <= ChunkSize {
 		content := sanitizeUTF8(data)
+		if filter != nil {
+			content = filter(content)
+		}
 		return []PHPFile{{
 			AbsPath:  absPath,
 			RelPath:  relPath,
@@ -218,6 +232,9 @@ func collectFile(path, base string) ([]PHPFile, error) {
 			end = len(data)
 		}
 		chunkContent := sanitizeUTF8(data[offset:end])
+		if filter != nil {
+			chunkContent = filter(chunkContent)
+		}
 		chunks = append(chunks, PHPFile{
 			AbsPath:     absPath,
 			RelPath:     fmt.Sprintf("%s [%d/%d]", relPath, i+1, totalChunks),

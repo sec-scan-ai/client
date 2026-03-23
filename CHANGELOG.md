@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.6.0
+
+### Credential redaction
+
+File content is now redacted before hashing and sending to the API. Passwords, API keys, tokens, database URLs, PEM private keys, and other credentials are replaced with `***REDACTED***` placeholders. This means no secrets leave your machine, and files with identical code but different credentials (e.g. staging vs production configs) produce the same hash, avoiding duplicate analysis.
+
+Redaction is on by default. Use `--no-redact` to disable, or `--redact-dry-run` to preview what would be redacted without sending anything.
+
+```bash
+# Preview redactions
+sec-scan /path/to/project --redact-dry-run
+
+# Disable redaction (not recommended)
+sec-scan /path/to/project --no-redact
+```
+
+### Self-update
+
+The CLI can now update itself to the latest GitHub release:
+
+```bash
+sec-scan update
+```
+
+Downloads the correct binary for your OS/architecture and replaces the current executable. Only updates when a newer version is available (proper semver comparison).
+
+### macOS code signing and notarization
+
+macOS binaries are now signed with a Developer ID certificate and notarized by Apple using [quill](https://github.com/anchore/quill). No more Gatekeeper warnings on first run.
+
 ## v0.5.0
 
 ### Selective rescan by status

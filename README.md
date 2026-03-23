@@ -38,6 +38,16 @@ Alternatively, configure via environment variables or a `.env` file:
 SEC_SCAN_TOKEN=sc_your_token_here
 ```
 
+## Updating
+
+sec-scan can update itself to the latest version:
+
+```bash
+sec-scan update
+```
+
+This checks the latest GitHub release, downloads the correct binary for your OS/architecture, and replaces the current executable. May require `sudo` if installed to a system directory like `/usr/local/bin`.
+
 ## Quick test
 
 The `test-files/` directory contains three PHP files for verifying your setup - a clean file, one with SQL injection, and a webshell:
@@ -86,6 +96,15 @@ sec-scan /path/to/project --dry-run
 
 # Use a custom ignore file (must not be inside the scan directory)
 sec-scan /path/to/project --ignore-file /etc/sec-scan/ignore
+
+# Preview what credentials would be redacted (no files sent to server)
+sec-scan /path/to/project --redact-dry-run
+
+# Disable credential redaction (not recommended, sends raw credentials to API)
+sec-scan /path/to/project --no-redact
+
+# Update to the latest version
+sec-scan update
 ```
 
 ## Options
@@ -106,6 +125,8 @@ sec-scan /path/to/project --ignore-file /etc/sec-scan/ignore
 | `--no-default-excludes` | - | - | `false` | Skip server-provided default exclude directories |
 | `--dry-run` | - | - | `false` | Show what would be scanned without sending files |
 | `--ignore-file` | - | - | `~/.sec-scan/ignore` | Path to file with checksums to ignore |
+| `--no-redact` | - | - | `false` | Disable credential redaction before hashing and sending |
+| `--redact-dry-run` | - | - | `false` | Preview what credentials would be redacted, then exit |
 
 Flag values take precedence over environment variables.
 
@@ -131,6 +152,37 @@ Excludes are case-insensitive.
 When sec-scan detects a framework, it fetches default exclude directories from the server. These skip auto-generated files (compiled templates, framework caches, generated proxy classes) that would produce false positives. Default excludes are shown in the progress output and cached locally for 24 hours.
 
 User `--exclude` flags are always additive on top of defaults. Use `--no-default-excludes` to disable server-provided defaults.
+
+## Credential redaction
+
+By default, sec-scan redacts credentials from file content before computing hashes and sending files to the API. This provides two benefits:
+
+1. **Privacy:** No passwords, API keys, tokens, or other secrets are sent to the analysis server
+2. **Stable hashes:** Files with identical code but different credentials (e.g. staging vs production configs) produce the same checksum, avoiding duplicate analysis and saving API credits
+
+Redaction replaces credential values with `***REDACTED***` while preserving variable names and code structure, so the security analysis remains accurate.
+
+### What gets redacted
+
+- PHP variable assignments (`$password = "..."`, `$api_key = '...'`)
+- PHP array/config values (`'password' => '...'`, `'token' => '...'`)
+- `define()` constants (`define('DB_PASSWORD', '...')`, `define('AUTH_KEY', '...')`)
+- Well-known token formats (OpenAI `sk-*`, Stripe `sk_test_*`, GitHub `ghp_*`, AWS `AKIA*`, Slack `xox*-*`)
+- Bearer tokens, database connection URLs with embedded passwords, PEM private key blocks
+
+### Preview redactions
+
+Use `--redact-dry-run` to see exactly what would be redacted in each file without sending anything to the server:
+
+```bash
+sec-scan /path/to/project --redact-dry-run
+```
+
+This shows each file with the number of redactions and the matched patterns, so you can verify the filtering works correctly for your codebase.
+
+### Disabling redaction
+
+If you need to send unmodified file content (e.g. for debugging), use `--no-redact`. This is not recommended for production use.
 
 ## Ignoring false positives
 

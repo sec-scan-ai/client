@@ -15,7 +15,7 @@ func TestCollectPHPFiles_BasicCollection(t *testing.T) {
 	writeFile(t, dir, "b.php", "<?php echo 2;")
 	writeFile(t, dir, "c.txt", "not php")
 
-	files, err := CollectPHPFiles(dir, nil, false)
+	files, err := CollectPHPFiles(dir, nil, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestCollectPHPFiles_Nested(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "sub"), "sub.php", "<?php")
 	writeFile(t, filepath.Join(dir, "sub", "deep"), "deep.php", "<?php")
 
-	files, err := CollectPHPFiles(dir, nil, false)
+	files, err := CollectPHPFiles(dir, nil, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestCollectPHPFiles_ExcludeDirs(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "src"), 0o755)
 	writeFile(t, filepath.Join(dir, "src"), "keep2.php", "<?php")
 
-	files, err := CollectPHPFiles(dir, []string{"vendor"}, false)
+	files, err := CollectPHPFiles(dir, []string{"vendor"}, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestCollectPHPFiles_ExcludeCaseInsensitive(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "Vendor"), 0o755)
 	writeFile(t, filepath.Join(dir, "Vendor"), "skip.php", "<?php")
 
-	files, err := CollectPHPFiles(dir, []string{"vendor"}, false)
+	files, err := CollectPHPFiles(dir, []string{"vendor"}, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestCollectPHPFiles_NestedExclude(t *testing.T) {
 	writeFile(t, dir, "keep.php", "<?php")
 
 	// "vendor" only excludes <root>/vendor, not <root>/a/vendor
-	files, err := CollectPHPFiles(dir, []string{"vendor"}, false)
+	files, err := CollectPHPFiles(dir, []string{"vendor"}, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestCollectPHPFiles_NestedExclude(t *testing.T) {
 	}
 
 	// Use path to exclude the nested one
-	files, err = CollectPHPFiles(dir, []string{"a/vendor"}, false)
+	files, err = CollectPHPFiles(dir, []string{"a/vendor"}, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestCollectPHPFiles_SingleFile(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "test.php", "<?php echo 1;")
 
-	files, err := CollectPHPFiles(filepath.Join(dir, "test.php"), nil, false)
+	files, err := CollectPHPFiles(filepath.Join(dir, "test.php"), nil, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestCollectPHPFiles_SingleFileNonPHP(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "test.txt", "not php")
 
-	_, err := CollectPHPFiles(filepath.Join(dir, "test.txt"), nil, false)
+	_, err := CollectPHPFiles(filepath.Join(dir, "test.txt"), nil, false, nil)
 	if err == nil {
 		t.Fatal("expected error for non-.php file")
 	}
@@ -136,7 +136,7 @@ func TestCollectPHPFiles_SingleFileNonPHP(t *testing.T) {
 func TestCollectPHPFiles_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
 
-	files, err := CollectPHPFiles(dir, nil, false)
+	files, err := CollectPHPFiles(dir, nil, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestCollectPHPFiles_EmptyDir(t *testing.T) {
 }
 
 func TestCollectPHPFiles_NonExistent(t *testing.T) {
-	_, err := CollectPHPFiles("/nonexistent/path", nil, false)
+	_, err := CollectPHPFiles("/nonexistent/path", nil, false, nil)
 	if err == nil {
 		t.Fatal("expected error for nonexistent path")
 	}
@@ -157,7 +157,7 @@ func TestCollectPHPFiles_ChecksumMatchesContent(t *testing.T) {
 	content := "<?php echo 'hello';"
 	writeFile(t, dir, "test.php", content)
 
-	files, err := CollectPHPFiles(filepath.Join(dir, "test.php"), nil, false)
+	files, err := CollectPHPFiles(filepath.Join(dir, "test.php"), nil, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestReadContent_Normal(t *testing.T) {
 	content := "<?php echo 'test';"
 	writeFile(t, dir, "test.php", content)
 
-	got, err := ReadContent(filepath.Join(dir, "test.php"), 0, 0)
+	got, err := ReadContent(filepath.Join(dir, "test.php"), 0, 0, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestReadContent_ChunkOffset(t *testing.T) {
 	content := "AAAAABBBBB"
 	writeFile(t, dir, "test.php", content)
 
-	got, err := ReadContent(filepath.Join(dir, "test.php"), 5, 5)
+	got, err := ReadContent(filepath.Join(dir, "test.php"), 5, 5, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestCollectPHPFiles_SmallFileNoChunking(t *testing.T) {
 	content := strings.Repeat("x", ChunkSize)
 	writeFile(t, dir, "exact.php", content)
 
-	files, err := CollectPHPFiles(dir, nil, false)
+	files, err := CollectPHPFiles(dir, nil, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestCollectPHPFiles_LargeFileChunking(t *testing.T) {
 	}
 	writeFile(t, dir, "big.php", content)
 
-	files, err := CollectPHPFiles(dir, nil, false)
+	files, err := CollectPHPFiles(dir, nil, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -260,8 +260,8 @@ func TestCollectPHPFiles_LargeFileChunking(t *testing.T) {
 	}
 
 	// Verify overlap - last ChunkOverlap bytes of chunk 1 should match first ChunkOverlap bytes of chunk 2
-	c1, _ := ReadContent(files[0].AbsPath, files[0].ChunkOffset, files[0].ChunkLen)
-	c2, _ := ReadContent(files[1].AbsPath, files[1].ChunkOffset, files[1].ChunkLen)
+	c1, _ := ReadContent(files[0].AbsPath, files[0].ChunkOffset, files[0].ChunkLen, nil)
+	c2, _ := ReadContent(files[1].AbsPath, files[1].ChunkOffset, files[1].ChunkLen, nil)
 	overlap1 := c1[len(c1)-ChunkOverlap:]
 	overlap2 := c2[:ChunkOverlap]
 	if overlap1 != overlap2 {
@@ -291,7 +291,7 @@ func TestCollectPHPFiles_LargeFileChunkCount(t *testing.T) {
 	content := strings.Repeat("x", size)
 	writeFile(t, dir, "huge.php", content)
 
-	files, err := CollectPHPFiles(dir, nil, false)
+	files, err := CollectPHPFiles(dir, nil, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestCollectPHPFiles_RelPathSlashes(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "sub"), 0o755)
 	writeFile(t, filepath.Join(dir, "sub"), "test.php", "<?php")
 
-	files, err := CollectPHPFiles(dir, nil, false)
+	files, err := CollectPHPFiles(dir, nil, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -338,7 +338,7 @@ func TestCollectPHPFiles_FollowSymlinks(t *testing.T) {
 	}
 
 	// With symlinks followed, should find both local and external file
-	files, err := CollectPHPFiles(scanDir, nil, true)
+	files, err := CollectPHPFiles(scanDir, nil, true, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -347,7 +347,7 @@ func TestCollectPHPFiles_FollowSymlinks(t *testing.T) {
 	}
 
 	// Without following symlinks, only the local file
-	files, err = CollectPHPFiles(scanDir, nil, false)
+	files, err = CollectPHPFiles(scanDir, nil, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -370,7 +370,7 @@ func TestCollectPHPFiles_SymlinkLoop(t *testing.T) {
 	}
 
 	// Should not infinite loop
-	files, err := CollectPHPFiles(dir, nil, true)
+	files, err := CollectPHPFiles(dir, nil, true, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -393,7 +393,7 @@ func TestCollectPHPFiles_PathBasedExclude(t *testing.T) {
 
 	writeFile(t, dir, "root.php", "<?php")
 
-	files, err := CollectPHPFiles(dir, []string{"admin/templates_c"}, false)
+	files, err := CollectPHPFiles(dir, []string{"admin/templates_c"}, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -420,7 +420,7 @@ func TestCollectPHPFiles_PathBasedExcludeWithSymlinks(t *testing.T) {
 
 	writeFile(t, dir, "root.php", "<?php")
 
-	files, err := CollectPHPFiles(dir, []string{"admin/templates_c"}, true)
+	files, err := CollectPHPFiles(dir, []string{"admin/templates_c"}, true, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -455,7 +455,7 @@ func TestCollectPHPFiles_MultipleExcludes(t *testing.T) {
 
 	writeFile(t, dir, "root.php", "<?php")
 
-	files, err := CollectPHPFiles(dir, []string{"vendor", "admin/cache"}, false)
+	files, err := CollectPHPFiles(dir, []string{"vendor", "admin/cache"}, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

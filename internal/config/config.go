@@ -35,6 +35,8 @@ type Config struct {
 	NoDefaultExcludes bool
 	DryRun            bool
 	IgnoreFile        string
+	NoRedact          bool // disable credential redaction (on by default)
+	RedactDryRun      bool // preview what would be redacted, then exit
 	Path              string
 }
 

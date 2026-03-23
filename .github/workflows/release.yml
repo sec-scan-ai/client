@@ -21,6 +21,9 @@ jobs:
       - name: Run tests
         run: go test ./...
 
+      - name: Install quill
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/quill/main/install.sh | sh -s -- -b /usr/local/bin
+
       - name: Build binaries
         run: |
           VERSION=${GITHUB_REF_NAME}
@@ -32,6 +35,19 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o sec-scan-linux-amd64 .
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o sec-scan-linux-arm64 .
           GOOS=windows GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o sec-scan-windows-amd64.exe .
+
+      - name: Sign and notarize macOS binaries
+        env:
+          QUILL_SIGN_P12: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_P12_BASE64 }}
+          QUILL_SIGN_PASSWORD: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD }}
+          QUILL_NOTARY_KEY: ${{ secrets.APPLE_NOTARIZE_KEY_P8_BASE64 }}
+          QUILL_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARIZE_KEY_ID }}
+          QUILL_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARIZE_KEY_ISSUER }}
+        run: |
+          for BINARY in sec-scan-darwin-arm64 sec-scan-darwin-amd64; do
+            echo "Signing and notarizing $BINARY..."
+            quill sign-and-notarize "$BINARY" -vv
+          done
 
       - name: Build release body
         run: |
@@ -45,10 +61,11 @@ jobs:
 
           **Windows:** Download `sec-scan-windows-amd64.exe` below and add it to your PATH.
 
+          > macOS binaries are signed and notarized by Apple. No Gatekeeper warnings on first run.
+
           HEADER
 
           # Extract the latest version section from CHANGELOG.md
-          # Takes everything between the first ## heading and the second one
           if [ -f CHANGELOG.md ]; then
             awk '/^## /{if(found) exit; found=1; next} found{print}' CHANGELOG.md >> release-body.md
           else

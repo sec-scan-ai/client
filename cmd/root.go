@@ -14,6 +14,7 @@ import (
 	"github.com/sec-scan-ai/client/internal/cache"
 	"github.com/sec-scan-ai/client/internal/collector"
 	"github.com/sec-scan-ai/client/internal/config"
+	"github.com/sec-scan-ai/client/internal/filter"
 	"github.com/sec-scan-ai/client/internal/framework"
 	"github.com/sec-scan-ai/client/internal/ignore"
 	"github.com/sec-scan-ai/client/internal/output"
@@ -83,9 +84,13 @@ func NewRootCmd() *cobra.Command {
 	flags.BoolVar(&cfg.NoDefaultExcludes, "no-default-excludes", false, "Skip server-provided default exclude directories")
 	flags.BoolVar(&cfg.DryRun, "dry-run", false, "Show what would be scanned without sending files to the server")
 	flags.StringVar(&cfg.IgnoreFile, "ignore-file", "", "Path to file with checksums to ignore (must not be inside scan directory)")
+	flags.BoolVar(&cfg.NoRedact, "no-redact", false, "Disable credential redaction (credentials are redacted by default before hashing and sending)")
+	flags.BoolVar(&cfg.RedactDryRun, "redact-dry-run", false, "Preview what credentials would be redacted, then exit (no files sent to server)")
 
 	// Hide the alias flag from help
 	flags.MarkHidden("force-check")
+
+	cmd.AddCommand(NewUpdateCmd())
 
 	return cmd
 }
@@ -120,9 +125,20 @@ func runScan(cfg *config.Config) int {
 		output.Progress(cfg.Quiet, "Manual excludes: %s", strings.Join(cfg.Excludes, ", "))
 	}
 
+	// Set up credential redaction filter
+	var contentFilter collector.ContentFilter
+	var credFilter *filter.Filter
+	if !cfg.NoRedact || cfg.RedactDryRun {
+		credFilter = filter.New()
+		contentFilter = credFilter.RedactString
+		output.Progress(cfg.Quiet, "Credential redaction: enabled")
+	} else {
+		output.Progress(cfg.Quiet, "Credential redaction: disabled")
+	}
+
 	// Collect PHP files
 	output.Progress(cfg.Quiet, "Scanning %s ...", cfg.Path)
-	files, err := collector.CollectPHPFiles(target, mergedExcludes, followSymlinks)
+	files, err := collector.CollectPHPFiles(target, mergedExcludes, followSymlinks, contentFilter)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
@@ -196,6 +212,38 @@ func runScan(cfg *config.Config) int {
 	uniqueChecksums := make([]string, 0, len(uniqueMap))
 	for cs := range uniqueMap {
 		uniqueChecksums = append(uniqueChecksums, cs)
+	}
+
+	if cfg.RedactDryRun {
+		output.Progress(cfg.Quiet, "Unique file(s): %d", len(uniqueChecksums))
+		fmt.Fprintf(os.Stderr, "\n")
+		totalRedactions := 0
+		filesWithRedactions := 0
+		for _, f := range files {
+			data, err := os.ReadFile(f.AbsPath)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "  %s: error reading file: %v\n", f.RelPath, err)
+				continue
+			}
+			content := string(data)
+			if f.ChunkOffset > 0 || f.ChunkLen > 0 {
+				end := f.ChunkOffset + f.ChunkLen
+				if end > len(content) {
+					end = len(content)
+				}
+				content = content[f.ChunkOffset:end]
+			}
+			_, matches := credFilter.Redact(content)
+			if len(matches) == 0 {
+				continue
+			}
+			totalRedactions += len(matches)
+			filesWithRedactions++
+			fmt.Fprint(os.Stderr, filter.Summary(f.RelPath, matches))
+		}
+		cleanFiles := len(files) - filesWithRedactions
+		fmt.Fprintf(os.Stderr, "\n%d redaction(s) in %d file(s), %d file(s) clean\n", totalRedactions, filesWithRedactions, cleanFiles)
+		return 0
 	}
 
 	if cfg.DryRun {
@@ -306,7 +354,7 @@ func runScan(cfg *config.Config) int {
 				break
 			}
 
-			content, err := collector.ReadContent(f.AbsPath, f.ChunkOffset, f.ChunkLen)
+			content, err := collector.ReadContent(f.AbsPath, f.ChunkOffset, f.ChunkLen, contentFilter)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: cannot read %s: %v\n", f.RelPath, err)
 				continue

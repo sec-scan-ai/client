@@ -27,6 +27,11 @@ echo "Downloading sec-scan for ${OS}/${ARCH}..."
 curl -fsSL -o "$BINARY" "$URL"
 chmod +x "$BINARY"
 
+# Remove macOS quarantine attribute (binary is signed and notarized)
+if [ "$OS" = "darwin" ] && command -v xattr >/dev/null 2>&1; then
+  xattr -d com.apple.quarantine "$BINARY" 2>/dev/null || true
+fi
+
 if [ -w "$INSTALL_DIR" ]; then
   mv "$BINARY" "$INSTALL_DIR/$BINARY"
 else

@@ -32,6 +32,22 @@ Two independent controls determine exit code 1:
 
 These are separate because warnings (unanalyzable files) are a different concern than insecure findings - a warning could be hiding anything, including critical vulnerabilities.
 
+## Credential Redaction
+- Enabled by default (`--no-redact` to disable) - credentials are replaced with `***REDACTED***` before hashing and before sending content to the API
+- Applied at two points: during file collection (before SHA256 checksum) and during content read (before API submission) - both use the same `ContentFilter` function to ensure consistency
+- Patterns are PHP-focused: `$password = "..."`, `'key' => '...'`, `define('SECRET', '...')`, plus well-known token formats (OpenAI, Stripe, GitHub, AWS, Slack, Bearer, database URLs, PEM blocks)
+- Inspired by github.com/wissem/cc-filter but reimplemented as a focused Go package (`internal/filter/`) since we only need content redaction, not cc-filter's hook system
+- `--redact-dry-run` reads files, applies the filter, and shows what would be redacted per file - exits before any API calls, useful for verifying filter coverage on a new codebase
+- The filter preserves code structure (variable names, quotes, operators) and only replaces values, so security analysis accuracy is not affected
+
+## Self-Update
+- `sec-scan update` checks the latest GitHub release via the GitHub API (`/repos/sec-scan-ai/client/releases/latest`)
+- Downloads the matching binary for the current OS/architecture (same naming convention as release assets: `sec-scan-{os}-{arch}`)
+- Replaces the current executable using atomic rename (old -> .old, new -> current, remove .old)
+- If the rename fails (permission denied), the old binary is restored and the user is told to try sudo
+- Version comparison is simple string equality on the tag name (no semver parsing needed)
+- No external dependencies, uses only stdlib `net/http` and `encoding/json`
+
 ## Key Design Decisions
 - Framework detection prefers `composer.lock` (exact versions) over `composer.json` (version constraints), walks up from scan dir only (no walk-down)
 - Magento is split into Magento 1 and Magento 2 - detection checks for M2-specific packages (`magento/framework`, `magento/product-community-edition`, `magento/product-enterprise-edition`)
@@ -63,6 +79,19 @@ Quick smoke test: `./sec-scan test-files/`
 - Write a new `## vX.Y.Z` section at the top of `CHANGELOG.md` summarizing those changes
 - Commit, tag (`vX.Y.Z`), push - the CI workflow extracts the latest section from `CHANGELOG.md` and uses it as the GitHub release body automatically
 - `CHANGELOG.md` is the single source of truth for release notes - no separate file to keep in sync
+
+### macOS code signing and notarization
+- Uses [quill](https://github.com/anchore/quill) (from Anchore) to sign and notarize macOS binaries on Linux, no macOS runner needed
+- All binaries (all platforms) are built in a single job on `ubuntu-latest`
+- After building, quill runs `sign-and-notarize` on each darwin binary
+- Required GitHub repository secrets (same naming convention as the sesaam CLI):
+  - `APPLE_DEVELOPER_CERTIFICATE_P12_BASE64` - Developer ID Application `.p12` certificate, base64-encoded
+  - `APPLE_DEVELOPER_CERTIFICATE_PASSWORD` - password for the `.p12`
+  - `APPLE_NOTARIZE_KEY_P8_BASE64` - App Store Connect API key (`.p8`), base64-encoded
+  - `APPLE_NOTARIZE_KEY_ID` - App Store Connect API key ID
+  - `APPLE_NOTARIZE_KEY_ISSUER` - App Store Connect API issuer ID
+- Quill reads these via environment variables: `QUILL_SIGN_P12`, `QUILL_SIGN_PASSWORD`, `QUILL_NOTARY_KEY`, `QUILL_NOTARY_KEY_ID`, `QUILL_NOTARY_ISSUER`
+- The install script clears the quarantine xattr after download so notarized binaries run without prompts
 
 ## Documentation
 - When adding new CLI flags or features, always update `README.md` (usage examples in Usage section + row in Options table) in addition to `CLAUDE.md`

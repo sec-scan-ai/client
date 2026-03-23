@@ -412,7 +412,7 @@ func TestScan_IgnoreList(t *testing.T) {
 	writePHP(t, dir, "vuln.php", "<?php eval($_POST['x']);")
 
 	// Compute the checksum of our test file
-	files, _ := collector.CollectPHPFiles(dir, nil, false)
+	files, _ := collector.CollectPHPFiles(dir, nil, false, nil)
 	if len(files) != 1 {
 		t.Fatalf("expected 1 file, got %d", len(files))
 	}
@@ -523,7 +523,7 @@ func TestScan_RescanMode(t *testing.T) {
 	writePHP(t, dir, "warn.php", "<?php /* ioncube */")
 
 	// Compute checksums so mock can return them
-	files, _ := collector.CollectPHPFiles(dir, nil, false)
+	files, _ := collector.CollectPHPFiles(dir, nil, false, nil)
 	checksumToFile := make(map[string]string)
 	for _, f := range files {
 		checksumToFile[f.Checksum] = f.RelPath
@@ -604,5 +604,158 @@ func TestScan_RescanInvalidStatus(t *testing.T) {
 	}
 	if err := cfg.Validate(); err == nil {
 		t.Error("expected error for invalid rescan status")
+	}
+}
+
+// --- Credential redaction tests ---
+
+func TestScan_RedactByDefault(t *testing.T) {
+	dir := t.TempDir()
+	// Two files with identical code but different passwords (8+ chars to trigger redaction)
+	writePHP(t, dir, "staging.php", `<?php $password = "staging_secret_123_long"; echo "hello";`)
+	writePHP(t, dir, "prod.php", `<?php $password = "production_secret_456_long"; echo "hello";`)
+
+	var lookupChecksums []string
+	server := mockServer(t,
+		func(req apiPkg.LookupRequest) apiPkg.LookupResponse {
+			lookupChecksums = req.Checksums
+			results := make(map[string]apiPkg.FileResult)
+			for _, cs := range req.Checksums {
+				results[cs] = apiPkg.FileResult{Secure: "yes"}
+			}
+			return apiPkg.LookupResponse{Results: results}
+		},
+		nil,
+	)
+	defer server.Close()
+
+	cfg := testConfig(server.URL, dir)
+	exitCode := runScan(cfg)
+	if exitCode != 0 {
+		t.Errorf("exit code = %d, want 0", exitCode)
+	}
+
+	// Both files should produce the same checksum after redaction
+	if len(lookupChecksums) != 1 {
+		t.Errorf("expected 1 unique checksum (credentials redacted), got %d", len(lookupChecksums))
+	}
+}
+
+func TestScan_NoRedactSendsDifferentChecksums(t *testing.T) {
+	dir := t.TempDir()
+	writePHP(t, dir, "staging.php", `<?php $password = "staging_secret_123_long"; echo "hello";`)
+	writePHP(t, dir, "prod.php", `<?php $password = "production_secret_456_long"; echo "hello";`)
+
+	var lookupChecksums []string
+	server := mockServer(t,
+		func(req apiPkg.LookupRequest) apiPkg.LookupResponse {
+			lookupChecksums = req.Checksums
+			results := make(map[string]apiPkg.FileResult)
+			for _, cs := range req.Checksums {
+				results[cs] = apiPkg.FileResult{Secure: "yes"}
+			}
+			return apiPkg.LookupResponse{Results: results}
+		},
+		nil,
+	)
+	defer server.Close()
+
+	cfg := testConfig(server.URL, dir)
+	cfg.NoRedact = true
+	exitCode := runScan(cfg)
+	if exitCode != 0 {
+		t.Errorf("exit code = %d, want 0", exitCode)
+	}
+
+	// Without redaction, files with different passwords should have different checksums
+	if len(lookupChecksums) != 2 {
+		t.Errorf("expected 2 unique checksums (no redaction), got %d", len(lookupChecksums))
+	}
+}
+
+func TestScan_RedactDoesNotSendCredentials(t *testing.T) {
+	dir := t.TempDir()
+	writePHP(t, dir, "config.php", `<?php $api_key = "super_secret_api_key_12345_long"; echo "hello";`)
+
+	var analyzedContent string
+	server := mockServer(t,
+		func(req apiPkg.LookupRequest) apiPkg.LookupResponse {
+			return apiPkg.LookupResponse{
+				Results: make(map[string]apiPkg.FileResult),
+				Unknown: req.Checksums,
+			}
+		},
+		func(req apiPkg.AnalyzeRequest) apiPkg.AnalyzeResponse {
+			if len(req.Files) > 0 {
+				analyzedContent = req.Files[0].Content
+			}
+			results := make(map[string]apiPkg.FileResult)
+			for _, f := range req.Files {
+				results[f.Checksum] = apiPkg.FileResult{Secure: "yes"}
+			}
+			return apiPkg.AnalyzeResponse{Results: results}
+		},
+	)
+	defer server.Close()
+
+	cfg := testConfig(server.URL, dir)
+	runScan(cfg)
+
+	if strings.Contains(analyzedContent, "super_secret_api_key_12345_long") {
+		t.Error("credential should be redacted from content sent to server")
+	}
+	if !strings.Contains(analyzedContent, "***REDACTED***") {
+		t.Error("expected redaction placeholder in content sent to server")
+	}
+}
+
+func TestScan_RedactDryRun(t *testing.T) {
+	dir := t.TempDir()
+	writePHP(t, dir, "config.php", `<?php $password = "secret123_long"; define('API_KEY', 'key_value_long');`)
+	writePHP(t, dir, "clean.php", `<?php echo "hello world";`)
+
+	stderr := captureStderr(t, func() {
+		cfg := testConfig("http://localhost:1", dir)
+		cfg.RedactDryRun = true
+		cfg.Quiet = false
+		exitCode := runScan(cfg)
+		if exitCode != 0 {
+			t.Errorf("redact-dry-run exit code = %d, want 0", exitCode)
+		}
+	})
+
+	if !strings.Contains(stderr, "config.php") {
+		t.Errorf("expected config.php in output, got:\n%s", stderr)
+	}
+	// clean.php should NOT appear (no redactions = not listed)
+	if strings.Contains(stderr, "clean.php") {
+		t.Errorf("clean.php should not appear in output (no redactions), got:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "1 file(s) clean") {
+		t.Errorf("expected clean file count in summary, got:\n%s", stderr)
+	}
+}
+
+func TestScan_RedactDryRun_NeverCallsAPI(t *testing.T) {
+	dir := t.TempDir()
+	writePHP(t, dir, "test.php", `<?php $password = "secret_long_value";`)
+
+	server := mockServer(t,
+		func(req apiPkg.LookupRequest) apiPkg.LookupResponse {
+			t.Error("redact-dry-run should not call lookup")
+			return apiPkg.LookupResponse{}
+		},
+		func(req apiPkg.AnalyzeRequest) apiPkg.AnalyzeResponse {
+			t.Error("redact-dry-run should not call analyze")
+			return apiPkg.AnalyzeResponse{}
+		},
+	)
+	defer server.Close()
+
+	cfg := testConfig(server.URL, dir)
+	cfg.RedactDryRun = true
+	exitCode := runScan(cfg)
+	if exitCode != 0 {
+		t.Fatalf("redact-dry-run exit code = %d, want 0", exitCode)
 	}
 }
