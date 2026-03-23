@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.0
+
+### Scan duration and cache stats in summary
+
+The summary output now shows how long the scan took and how many files were resolved from cache vs analyzed. This gives visibility into cache effectiveness and scan performance.
+
+Text output shows cached count with a hit percentage, analyzed count, and duration in seconds. In force mode (where everything is re-analyzed), the cached line is omitted. JSON output includes `cached`, `analyzed`, and `duration` fields in the summary object.
+
 ## v0.6.0
 
 ### Credential redaction

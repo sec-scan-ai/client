@@ -2,6 +2,7 @@ package output
 
 import (
 	"sort"
+	"time"
 
 	"github.com/sec-scan-ai/client/internal/api"
 	"github.com/sec-scan-ai/client/internal/collector"
@@ -82,6 +83,9 @@ type ScanSummary struct {
 	WarningCount  int
 	ErrorCount    int
 	SkippedCount  int
+	CachedCount   int
+	AnalyzedCount int
+	Duration      time.Duration
 	InsecureFiles []InsecureFile
 	WarningFiles  []WarningFile
 	ErrorFiles    []ErrorFile
@@ -92,9 +96,14 @@ type ScanSummary struct {
 // individually, but analysis is deduplicated by checksum.
 // Files without a result (e.g. skipped due to interruption) are counted
 // separately and not treated as errors.
-func BuildSummary(files []collector.PHPFile, results map[string]api.FileResult) ScanSummary {
+// cachedCount and analyzedCount track how many unique files came from cache vs analysis.
+// duration is the total scan time.
+func BuildSummary(files []collector.PHPFile, results map[string]api.FileResult, cachedCount, analyzedCount int, duration time.Duration) ScanSummary {
 	summary := ScanSummary{
-		TotalFiles: len(files),
+		TotalFiles:    len(files),
+		CachedCount:   cachedCount,
+		AnalyzedCount: analyzedCount,
+		Duration:      duration,
 	}
 
 	// Count unique checksums

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/sec-scan-ai/client/internal/api"
 	"github.com/sec-scan-ai/client/internal/cache"
@@ -96,6 +97,7 @@ func NewRootCmd() *cobra.Command {
 }
 
 func runScan(cfg *config.Config) int {
+	startTime := time.Now()
 	followSymlinks := !cfg.NoFollowSymlinks
 
 	// Resolve target path
@@ -256,6 +258,7 @@ func runScan(cfg *config.Config) int {
 	results := make(map[string]api.FileResult)
 
 	var toAnalyze []collector.PHPFile
+	var cachedCount int
 	forceAnalyze := cfg.Force
 
 	if cfg.Force {
@@ -297,7 +300,7 @@ func runScan(cfg *config.Config) int {
 		}
 
 		rescanCount := len(rescanChecksums)
-		cachedCount := len(lookupResp.Results) - rescanCount
+		cachedCount = len(lookupResp.Results) - rescanCount
 		unknownCount := len(lookupResp.Unknown)
 		if rescanCount > 0 {
 			output.Progress(cfg.Quiet, "  %d cached, %d need analysis, %d queued for rescan", cachedCount, unknownCount, rescanCount)
@@ -430,7 +433,7 @@ func runScan(cfg *config.Config) int {
 	}
 
 	// Build summary and render
-	summary := output.BuildSummary(files, results)
+	summary := output.BuildSummary(files, results, cachedCount, len(toAnalyze), time.Since(startTime))
 	shouldFail := output.ShouldFail(summary, cfg.FailOn, cfg.FailOnWarning)
 
 	exitCode := 0

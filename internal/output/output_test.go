@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sec-scan-ai/client/internal/api"
 	"github.com/sec-scan-ai/client/internal/collector"
@@ -49,7 +50,7 @@ func TestBuildSummary_Counts(t *testing.T) {
 		"eee": {Secure: "warning", Details: "ionCube encoded - cannot analyze"},
 	}
 
-	summary := BuildSummary(files, results)
+	summary := BuildSummary(files, results, 0, 0, 0)
 
 	if summary.TotalFiles != 5 {
 		t.Errorf("TotalFiles = %d, want 5", summary.TotalFiles)
@@ -92,7 +93,7 @@ func TestBuildSummary_UniqueFiles(t *testing.T) {
 		"diff": {Secure: "yes"},
 	}
 
-	summary := BuildSummary(files, results)
+	summary := BuildSummary(files, results, 0, 0, 0)
 
 	if summary.TotalFiles != 3 {
 		t.Errorf("TotalFiles = %d, want 3", summary.TotalFiles)
@@ -116,7 +117,7 @@ func TestBuildSummary_RiskSorting(t *testing.T) {
 		"d": {Secure: "no", Risk: "high", Details: "sqli"},
 	}
 
-	summary := BuildSummary(files, results)
+	summary := BuildSummary(files, results, 0, 0, 0)
 
 	if len(summary.InsecureFiles) != 4 {
 		t.Fatalf("InsecureFiles count = %d, want 4", len(summary.InsecureFiles))
@@ -392,6 +393,77 @@ func TestRenderJSON_WithWarnings(t *testing.T) {
 	}
 	if result.Files[0].Details != "ionCube encoded" {
 		t.Errorf("files[0].details = %q, want ionCube encoded", result.Files[0].Details)
+	}
+}
+
+func TestRenderText_CacheAndDuration(t *testing.T) {
+	summary := ScanSummary{
+		TotalFiles:    10,
+		UniqueFiles:   10,
+		SecureCount:   10,
+		CachedCount:   7,
+		AnalyzedCount: 3,
+		Duration:      12300 * time.Millisecond,
+	}
+
+	out := captureStdout(t, func() { RenderText(summary) })
+
+	if !strings.Contains(out, "Cached:         7 (70%)") {
+		t.Errorf("expected cached count with percentage, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Analyzed:       3") {
+		t.Errorf("expected analyzed count, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Duration:       12.3s") {
+		t.Errorf("expected duration, got:\n%s", out)
+	}
+}
+
+func TestRenderText_ForceMode_NoCachedLine(t *testing.T) {
+	summary := ScanSummary{
+		TotalFiles:    5,
+		UniqueFiles:   5,
+		SecureCount:   5,
+		CachedCount:   0,
+		AnalyzedCount: 5,
+		Duration:      2500 * time.Millisecond,
+	}
+
+	out := captureStdout(t, func() { RenderText(summary) })
+
+	if strings.Contains(out, "Cached:") {
+		t.Errorf("should not show Cached line when cachedCount is 0, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Analyzed:       5") {
+		t.Errorf("expected analyzed count, got:\n%s", out)
+	}
+}
+
+func TestRenderJSON_CacheAndDuration(t *testing.T) {
+	summary := ScanSummary{
+		TotalFiles:    10,
+		UniqueFiles:   10,
+		SecureCount:   10,
+		CachedCount:   7,
+		AnalyzedCount: 3,
+		Duration:      12300 * time.Millisecond,
+	}
+
+	out := captureStdout(t, func() { RenderJSON(summary, 0) })
+
+	var result jsonOutput
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("invalid JSON output: %v\nraw: %s", err, out)
+	}
+
+	if result.Summary.Cached != 7 {
+		t.Errorf("cached = %d, want 7", result.Summary.Cached)
+	}
+	if result.Summary.Analyzed != 3 {
+		t.Errorf("analyzed = %d, want 3", result.Summary.Analyzed)
+	}
+	if result.Summary.Duration != "12.3s" {
+		t.Errorf("duration = %q, want 12.3s", result.Summary.Duration)
 	}
 }
 

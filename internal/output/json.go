@@ -13,13 +13,16 @@ type jsonOutput struct {
 }
 
 type jsonSummary struct {
-	TotalFiles  int `json:"totalFiles"`
-	UniqueFiles int `json:"uniqueFiles"`
-	Secure      int `json:"secure"`
-	Insecure    int `json:"insecure"`
-	Warnings    int `json:"warnings"`
-	Errors      int `json:"errors"`
-	Skipped     int `json:"skipped,omitempty"`
+	TotalFiles  int    `json:"totalFiles"`
+	UniqueFiles int    `json:"uniqueFiles"`
+	Secure      int    `json:"secure"`
+	Insecure    int    `json:"insecure"`
+	Warnings    int    `json:"warnings"`
+	Errors      int    `json:"errors"`
+	Skipped     int    `json:"skipped,omitempty"`
+	Cached      int    `json:"cached"`
+	Analyzed    int    `json:"analyzed"`
+	Duration    string `json:"duration"`
 }
 
 type jsonFileResult struct {
@@ -32,6 +35,8 @@ type jsonFileResult struct {
 
 // RenderJSON outputs machine-readable JSON to stdout.
 func RenderJSON(summary ScanSummary, exitCode int) {
+	dur := fmt.Sprintf("%.1fs", summary.Duration.Seconds())
+
 	out := jsonOutput{
 		Summary: jsonSummary{
 			TotalFiles:  summary.TotalFiles,
@@ -41,6 +46,9 @@ func RenderJSON(summary ScanSummary, exitCode int) {
 			Warnings:    summary.WarningCount,
 			Errors:      summary.ErrorCount,
 			Skipped:     summary.SkippedCount,
+			Cached:      summary.CachedCount,
+			Analyzed:    summary.AnalyzedCount,
+			Duration:    dur,
 		},
 		Files:    make([]jsonFileResult, 0, len(summary.InsecureFiles)+len(summary.WarningFiles)+len(summary.ErrorFiles)),
 		ExitCode: exitCode,

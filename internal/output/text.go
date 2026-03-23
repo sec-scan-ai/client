@@ -54,6 +54,17 @@ func RenderText(summary ScanSummary) {
 	if summary.SkippedCount > 0 {
 		fmt.Fprintf(w, "%-16s%d\n", "Skipped:", summary.SkippedCount)
 	}
+	if summary.CachedCount > 0 || summary.AnalyzedCount > 0 {
+		total := summary.CachedCount + summary.AnalyzedCount
+		if summary.CachedCount > 0 && total > 0 {
+			pct := float64(summary.CachedCount) / float64(total) * 100
+			fmt.Fprintf(w, "%-16s%d (%.0f%%)\n", "Cached:", summary.CachedCount, pct)
+		}
+		fmt.Fprintf(w, "%-16s%d\n", "Analyzed:", summary.AnalyzedCount)
+	}
+	if summary.Duration > 0 {
+		fmt.Fprintf(w, "%-16s%.1fs\n", "Duration:", summary.Duration.Seconds())
+	}
 	fmt.Fprintln(w, separator)
 
 	for _, f := range summary.InsecureFiles {
