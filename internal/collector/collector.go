@@ -46,7 +46,7 @@ func CollectPHPFiles(target string, excludes []string, followSymlinks bool, filt
 		if !isPHP(target) {
 			return nil, fmt.Errorf("%s is not a .php file", target)
 		}
-		chunks, err := collectFile(target, target, filter)
+		chunks, err := collectFile(target, filepath.Dir(target), filter)
 		if err != nil {
 			return nil, err
 		}

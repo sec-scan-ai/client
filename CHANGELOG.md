@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.1
+
+### Fix single-file scan showing "." as filename
+
+When scanning a single file (e.g. `sec-scan file.php`), the filename was displayed as "." in results because the file path was used as its own base directory for relative path computation. Now uses the file's parent directory as the base, so the filename is shown correctly.
+
 ## v0.7.0
 
 ### Scan duration and cache stats in summary
