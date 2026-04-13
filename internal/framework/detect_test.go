@@ -43,6 +43,16 @@ func TestDetect_Frameworks(t *testing.T) {
 			want:     "Shopware 6",
 		},
 		{
+			name:     "Shopware 6 monorepo via project name",
+			composer: `{"name": "shopware/platform", "require": {"shopware/conflicts": "0.6.0", "shopware/dev-tools": "^1.3"}}`,
+			want:     "Shopware 6",
+		},
+		{
+			name:     "Shopware 6 monorepo via core project name",
+			composer: `{"name": "shopware/core", "require": {"php": "^8.1"}}`,
+			want:     "Shopware 6",
+		},
+		{
 			name:     "Shopware 5",
 			composer: `{"require": {"shopware/shopware": "^5.7"}}`,
 			want:     "Shopware 5",

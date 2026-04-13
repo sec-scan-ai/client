@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.2
+
+### Fix Shopware 6 monorepo detected as Shopware 5
+
+When scanning the Shopware 6 source repository (or a development checkout), the framework was incorrectly identified as Shopware 5. This happened because the monorepo's composer.json doesn't require `shopware/core` or `shopware/platform` as dependencies - it *is* those packages. The detection now also checks the composer.json `name` field, so projects named `shopware/platform` or `shopware/core` are correctly identified as Shopware 6.
+
 ## v0.7.1
 
 ### Fix single-file scan showing "." as filename

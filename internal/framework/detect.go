@@ -62,11 +62,14 @@ func matchFramework(packages map[string]string, projectName string) string {
 	}
 
 	// Shopware
-	if strings.Contains(keysLower, "shopware/") {
+	if strings.Contains(keysLower, "shopware/") || projectName == "shopware/platform" || projectName == "shopware/core" {
 		if _, ok := packages["shopware/core"]; ok {
 			return "Shopware 6"
 		}
 		if _, ok := packages["shopware/platform"]; ok {
+			return "Shopware 6"
+		}
+		if projectName == "shopware/platform" || projectName == "shopware/core" {
 			return "Shopware 6"
 		}
 		return "Shopware 5"
