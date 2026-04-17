@@ -1,7 +1,7 @@
 BINARY_NAME := sec-scan
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME := $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
-LDFLAGS := -s -w -X github.com/sec-scan/client/cmd.Version=$(VERSION) -X github.com/sec-scan/client/cmd.BuildTime=$(BUILD_TIME)
+LDFLAGS := -s -w -X github.com/sec-scan-ai/client/cmd.Version=$(VERSION) -X github.com/sec-scan-ai/client/cmd.BuildTime=$(BUILD_TIME)
 
 .PHONY: build test test-verbose test-cover lint clean all
 

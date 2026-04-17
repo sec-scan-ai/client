@@ -1,7 +1,6 @@
 package ignore
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,7 +21,7 @@ func TestLoad_ValidChecksums(t *testing.T) {
 	dir := t.TempDir()
 	path := writeIgnoreFile(t, dir, validHash+"\n"+validHash2+"\n")
 
-	result, err := Load(path)
+	result, _, err := Load(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -43,7 +42,7 @@ func TestLoad_InlineComments(t *testing.T) {
 		validHash2 + "\t# lib/legacy.php - false positive\n"
 	path := writeIgnoreFile(t, dir, content)
 
-	result, err := Load(path)
+	result, _, err := Load(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -59,7 +58,7 @@ func TestLoad_FullLineComments(t *testing.T) {
 		validHash + "\n"
 	path := writeIgnoreFile(t, dir, content)
 
-	result, err := Load(path)
+	result, _, err := Load(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -73,7 +72,7 @@ func TestLoad_EmptyLines(t *testing.T) {
 	content := "\n\n" + validHash + "\n\n\n"
 	path := writeIgnoreFile(t, dir, content)
 
-	result, err := Load(path)
+	result, _, err := Load(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -87,7 +86,7 @@ func TestLoad_UppercaseNormalized(t *testing.T) {
 	upper := strings.ToUpper(validHash)
 	path := writeIgnoreFile(t, dir, upper+"\n")
 
-	result, err := Load(path)
+	result, _, err := Load(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -101,18 +100,15 @@ func TestLoad_InvalidLineWrongLength(t *testing.T) {
 	content := "tooshort\n" + validHash + "\n"
 	path := writeIgnoreFile(t, dir, content)
 
-	stderr := captureStderr(t, func() {
-		result, err := Load(path)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(result) != 1 {
-			t.Fatalf("got %d checksums, want 1 (valid only)", len(result))
-		}
-	})
-
-	if !strings.Contains(stderr, "line 1") {
-		t.Errorf("expected warning with line number, got: %s", stderr)
+	result, warnings, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("got %d checksums, want 1 (valid only)", len(result))
+	}
+	if len(warnings) == 0 || !strings.Contains(warnings[0], "line 1") {
+		t.Errorf("expected warning with line number, got: %v", warnings)
 	}
 }
 
@@ -122,23 +118,20 @@ func TestLoad_InvalidLineNonHex(t *testing.T) {
 	content := nonHex + "\n" + validHash + "\n"
 	path := writeIgnoreFile(t, dir, content)
 
-	stderr := captureStderr(t, func() {
-		result, err := Load(path)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(result) != 1 {
-			t.Fatalf("got %d checksums, want 1 (valid only)", len(result))
-		}
-	})
-
-	if !strings.Contains(stderr, "invalid hex") {
-		t.Errorf("expected hex warning, got: %s", stderr)
+	result, warnings, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("got %d checksums, want 1 (valid only)", len(result))
+	}
+	if len(warnings) == 0 || !strings.Contains(warnings[0], "invalid hex") {
+		t.Errorf("expected hex warning, got: %v", warnings)
 	}
 }
 
 func TestLoad_MissingFile(t *testing.T) {
-	result, err := Load("/nonexistent/path/ignore")
+	result, _, err := Load("/nonexistent/path/ignore")
 	if err != nil {
 		t.Fatalf("missing file should not be an error, got: %v", err)
 	}
@@ -151,7 +144,7 @@ func TestLoad_EmptyFile(t *testing.T) {
 	dir := t.TempDir()
 	path := writeIgnoreFile(t, dir, "")
 
-	result, err := Load(path)
+	result, _, err := Load(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -165,7 +158,7 @@ func TestLoad_DuplicateChecksums(t *testing.T) {
 	content := validHash + "\n" + validHash + "\n"
 	path := writeIgnoreFile(t, dir, content)
 
-	result, err := Load(path)
+	result, _, err := Load(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -174,21 +167,3 @@ func TestLoad_DuplicateChecksums(t *testing.T) {
 	}
 }
 
-func captureStderr(t *testing.T, fn func()) string {
-	t.Helper()
-	oldStderr := os.Stderr
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("failed to create pipe: %v", err)
-	}
-	os.Stderr = w
-
-	fn()
-
-	w.Close()
-	var buf bytes.Buffer
-	buf.ReadFrom(r)
-	os.Stderr = oldStderr
-
-	return buf.String()
-}

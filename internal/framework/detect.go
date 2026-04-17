@@ -11,12 +11,20 @@ import (
 const DefaultFramework = "PHP (unknown framework)"
 
 // Detect tries composer.lock then composer.json in the scan directory,
-// then walks UP to the filesystem root. Returns DefaultFramework if none found.
+// then walks UP toward the user's home directory. Returns DefaultFramework
+// if none found.
+//
+// The walk stops at $HOME (or at the filesystem root if the scan path is
+// outside $HOME) to prevent an attacker-controlled composer.json in a
+// parent directory (e.g. /tmp/composer.json, $HOME/composer.json) from
+// influencing the framework hint sent to the server.
 func Detect(folder string) string {
 	absFolder, err := filepath.Abs(folder)
 	if err != nil {
 		return DefaultFramework
 	}
+
+	stopAt := detectBoundary(absFolder)
 
 	current := absFolder
 	for {
@@ -32,6 +40,9 @@ func Detect(folder string) string {
 			return result
 		}
 
+		if current == stopAt {
+			break
+		}
 		parent := filepath.Dir(current)
 		if parent == current {
 			break
@@ -40,6 +51,26 @@ func Detect(folder string) string {
 	}
 
 	return DefaultFramework
+}
+
+// detectBoundary returns the directory where the walk-up should stop.
+// Prefers $HOME when the scan path is inside the user's home directory.
+// Otherwise stops at the filesystem root (by returning "/" or the
+// equivalent, which filepath.Dir(current) == current will reach naturally).
+func detectBoundary(absFolder string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	absHome, err := filepath.Abs(home)
+	if err != nil {
+		return ""
+	}
+	sep := string(filepath.Separator)
+	if absFolder == absHome || strings.HasPrefix(absFolder, absHome+sep) {
+		return absHome
+	}
+	return ""
 }
 
 // matchFramework takes a map of package names to versions and returns the detected framework.

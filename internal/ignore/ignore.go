@@ -10,20 +10,23 @@ import (
 
 const checksumLen = 64 // SHA256 hex length
 
-// Load reads an ignore file and returns a set of valid SHA256 checksums.
-// Lines can contain an optional inline comment after the checksum (separated by whitespace or #).
+// Load reads an ignore file and returns a set of valid SHA256 checksums
+// plus any per-line warnings (so the caller can decide whether to print
+// them based on quiet/verbosity settings). Lines can contain an optional
+// inline comment after the checksum (separated by whitespace or #).
 // Returns an empty map if the file does not exist.
-func Load(path string) (map[string]bool, error) {
+func Load(path string) (map[string]bool, []string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return map[string]bool{}, nil
+			return map[string]bool{}, nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	defer f.Close()
 
 	result := make(map[string]bool)
+	var warnings []string
 	scanner := bufio.NewScanner(f)
 	lineNum := 0
 
@@ -44,12 +47,12 @@ func Load(path string) (map[string]bool, error) {
 		field = strings.ToLower(field)
 
 		if len(field) != checksumLen {
-			fmt.Fprintf(os.Stderr, "Warning: ignore file line %d: expected %d hex chars, got %d: %q\n", lineNum, checksumLen, len(field), field)
+			warnings = append(warnings, fmt.Sprintf("ignore file line %d: expected %d hex chars, got %d: %q", lineNum, checksumLen, len(field), field))
 			continue
 		}
 
 		if _, err := hex.DecodeString(field); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: ignore file line %d: invalid hex: %q\n", lineNum, field)
+			warnings = append(warnings, fmt.Sprintf("ignore file line %d: invalid hex: %q", lineNum, field))
 			continue
 		}
 
@@ -57,8 +60,8 @@ func Load(path string) (map[string]bool, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("reading ignore file: %w", err)
+		return nil, warnings, fmt.Errorf("reading ignore file: %w", err)
 	}
 
-	return result, nil
+	return result, warnings, nil
 }

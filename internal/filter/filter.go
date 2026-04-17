@@ -172,44 +172,70 @@ func New() *Filter {
 
 // Redact replaces credentials in content with placeholders.
 // Returns the redacted content and a list of matches describing what was changed.
+//
+// Line numbers are computed against the working string at the time of each
+// match. Because patterns are applied in registration order and the only
+// line-collapsing pattern (private_key_block) runs last, line numbers for
+// all per-credential matches map back correctly to the original source.
 func (f *Filter) Redact(content string) (string, []Match) {
 	var matches []Match
 	result := content
 
 	for _, p := range f.patterns {
-		if p.replaceFunc != nil {
-			result = p.re.ReplaceAllStringFunc(result, func(s string) string {
-				submatch := p.re.FindStringSubmatch(s)
-				if submatch == nil {
-					return s
-				}
-				replaced := p.replaceFunc(submatch)
-				if replaced != s {
-					lineNum := lineOf(content, strings.Index(content, s))
-					matches = append(matches, Match{
-						Line:    lineNum,
-						Pattern: p.name,
-						Before:  truncate(s, 80),
-						After:   truncate(replaced, 80),
-					})
-				}
-				return replaced
-			})
-		} else {
-			result = p.re.ReplaceAllStringFunc(result, func(s string) string {
-				lineNum := lineOf(content, strings.Index(content, s))
-				matches = append(matches, Match{
-					Line:    lineNum,
-					Pattern: p.name,
-					Before:  truncate(s, 80),
-					After:   placeholder,
-				})
-				return placeholder
-			})
+		locs := p.re.FindAllStringSubmatchIndex(result, -1)
+		if len(locs) == 0 {
+			continue
 		}
+
+		var b strings.Builder
+		b.Grow(len(result))
+		prev := 0
+
+		for _, loc := range locs {
+			start, end := loc[0], loc[1]
+			b.WriteString(result[prev:start])
+			matchStr := result[start:end]
+
+			var replaced string
+			if p.replaceFunc != nil {
+				replaced = p.replaceFunc(submatchesFromLoc(result, loc))
+			} else {
+				replaced = placeholder
+			}
+
+			if replaced != matchStr {
+				matches = append(matches, Match{
+					Line:    lineOf(result, start),
+					Pattern: p.name,
+					Before:  truncate(matchStr, 80),
+					After:   truncate(replaced, 80),
+				})
+			}
+
+			b.WriteString(replaced)
+			prev = end
+		}
+		b.WriteString(result[prev:])
+		result = b.String()
 	}
 
 	return result, matches
+}
+
+// submatchesFromLoc rebuilds the []string that FindStringSubmatch would
+// return, given a match-index slice from FindAllStringSubmatchIndex.
+// An unmatched optional group (start == -1) becomes "".
+func submatchesFromLoc(s string, loc []int) []string {
+	n := len(loc) / 2
+	out := make([]string, n)
+	for i := 0; i < n; i++ {
+		start, end := loc[2*i], loc[2*i+1]
+		if start < 0 {
+			continue
+		}
+		out[i] = s[start:end]
+	}
+	return out
 }
 
 // RedactString applies redaction and returns only the redacted content.

@@ -291,6 +291,48 @@ func TestDetect_NoComposerJSON(t *testing.T) {
 	}
 }
 
+func TestDetect_StopsAtHomeBoundary(t *testing.T) {
+	// Set HOME to an isolated tempdir containing a planted composer.json.
+	// A scan of a subdirectory of HOME that has no composer file should
+	// walk up within HOME (and find the planted one - that's inside the
+	// boundary). But a scan OUTSIDE HOME must NOT reach HOME's composer.
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	writeComposer(t, fakeHome, `{"require": {"laravel/framework": "^10.0"}}`)
+
+	t.Run("within HOME walks up and finds planted composer", func(t *testing.T) {
+		sub := filepath.Join(fakeHome, "project", "src")
+		os.MkdirAll(sub, 0o755)
+		if got := Detect(sub); got != "Laravel" {
+			t.Errorf("Detect(%q) = %q, want Laravel", sub, got)
+		}
+	})
+
+	t.Run("outside HOME does not reach HOME", func(t *testing.T) {
+		// Scan a dir outside the fake HOME. The walk must not climb into
+		// the HOME boundary. We use a sibling tempdir as the scan target.
+		outside := t.TempDir()
+		sub := filepath.Join(outside, "nested")
+		os.MkdirAll(sub, 0o755)
+		got := Detect(sub)
+		if got == "Laravel" {
+			t.Errorf("Detect(%q) reached planted composer in HOME: got %q", sub, got)
+		}
+	})
+}
+
+func TestDetect_StopsAtHomeRoot(t *testing.T) {
+	// A scan at exactly $HOME should still check $HOME's composer, but not
+	// climb above it even if the system has a composer.json at /.
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	writeComposer(t, fakeHome, `{"require": {"laravel/framework": "^10.0"}}`)
+
+	if got := Detect(fakeHome); got != "Laravel" {
+		t.Errorf("Detect(home) = %q, want Laravel", got)
+	}
+}
+
 func TestDetect_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "composer.json"), []byte("not json{{{"), 0o644)

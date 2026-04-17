@@ -40,13 +40,15 @@ SEC_SCAN_TOKEN=sc_your_token_here
 
 ## Updating
 
-sec-scan can update itself to the latest version:
+sec-scan auto-updates once per day. On every run it checks a cached record at `~/.sec-scan/update-check.json`; if that record is more than 24 hours old, it does a conditional GET against the GitHub API and, if a newer release exists, downloads and verifies it against `checksums.txt` and atomically replaces `~/.sec-scan/bin/sec-scan`. The currently running command keeps using its in-memory binary; the next invocation transparently picks up the new version. All failures are silent. Set `SEC_SCAN_NO_UPDATE_CHECK=1` (or `CI=true`) to disable.
+
+To update on demand:
 
 ```bash
 sec-scan update
 ```
 
-This checks the latest GitHub release, downloads the correct binary for your OS/architecture, and replaces the current executable. May require `sudo` if installed to a system directory like `/usr/local/bin`.
+This also silently migrates legacy plain-file installs (single binary in `/usr/local/bin`) to the symlink layout (`~/.sec-scan/bin/sec-scan` with a symlink at `/usr/local/bin/sec-scan`), which is what lets the daily auto-update run without sudo. The one-time migration may prompt for sudo.
 
 ## Quick test
 
@@ -129,6 +131,12 @@ sec-scan update
 | `--redact-dry-run` | - | - | `false` | Preview what credentials would be redacted, then exit |
 
 Flag values take precedence over environment variables.
+
+### Environment-only settings
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `SEC_SCAN_NO_UPDATE_CHECK` | - | Disable the daily auto-update check. Also disabled automatically when `CI` is set. |
 
 ## Excludes
 

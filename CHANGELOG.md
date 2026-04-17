@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.8.0
+
+### Daily auto-update
+
+sec-scan now quietly keeps itself up to date. Once per day (on a normal invocation) it does a conditional GET against the GitHub releases API, and if a newer release exists it downloads the binary, verifies it against `checksums.txt`, and atomically replaces `~/.sec-scan/bin/sec-scan`. The currently running command keeps using its in-memory binary; the next invocation transparently picks up the new version. All failures are silent. Set `SEC_SCAN_NO_UPDATE_CHECK=1` (or `CI=true`) to disable. Integrity verification is mandatory - releases without `checksums.txt` will not be installed automatically.
+
+New installs via `install.sh` place the real binary at `~/.sec-scan/bin/sec-scan` with a symlink at `/usr/local/bin/sec-scan` (user-owned, so updates run unprivileged). `sec-scan update` silently migrates legacy plain-file installs to this layout on first run.
+
+### Fix: credential filter reported wrong line numbers
+
+`--redact-dry-run` now reports the correct line for every credential occurrence. Previously, when the same credential text appeared on multiple lines, every match reported the first line's number. Users fixing the reported line would miss later copies.
+
+### Framework detection boundary
+
+Detection now stops walking up the directory tree at `$HOME` when scanning inside home. Prevents a composer.json planted in a parent directory (e.g. `$HOME/composer.json`, `/tmp/composer.json`) from influencing the framework hint sent to the server.
+
+### Supply chain hardening
+
+The release workflow now pins all GitHub Actions to commit SHAs instead of mutable tags, and pins the `quill` installer to a specific release tag rather than `main`. Closes a class of attack where a compromised upstream repo could inject code into our release pipeline with access to Apple signing secrets.
+
+### Other
+
+- Update check writes its cache timestamp even on API errors (rate limit, network failure), closing a retry loop where a transient GitHub outage would cause every subsequent run to re-attempt the API call.
+- `sec-scan update`'s sudo invocation now uses absolute `/usr/bin/sudo` and `/bin/ln` paths and prints the "why" before triggering the sudo prompt.
+- `Makefile` ldflags typo fixed - `make build` now produces binaries with the correct version string (previously silently fell back to "dev").
+- Ignore-file warnings now respect `--quiet`.
+- New `CI` workflow runs `go vet`, tests, and a `make build` version-string check on every push/PR.
+
 ## v0.7.3
 
 ### Sylius detection

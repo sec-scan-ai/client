@@ -406,3 +406,47 @@ func TestSummary_NoMatches(t *testing.T) {
 		t.Errorf("expected 0 redactions, got: %s", s)
 	}
 }
+
+func TestRedact_LineNumbersDistinctForRepeatedMatches(t *testing.T) {
+	// Regression: strings.Index would return the first occurrence for every
+	// repeated match, so duplicate credentials on different lines all got
+	// the same (wrong) line number. Each occurrence must report its own line.
+	f := New()
+	content := `<?php
+$password = "secret12345";
+// unrelated
+$password = "secret12345";
+`
+
+	_, matches := f.Redact(content)
+	if len(matches) != 2 {
+		t.Fatalf("expected 2 matches, got %d: %+v", len(matches), matches)
+	}
+	if matches[0].Line != 2 {
+		t.Errorf("first match line = %d, want 2", matches[0].Line)
+	}
+	if matches[1].Line != 4 {
+		t.Errorf("second match line = %d, want 4", matches[1].Line)
+	}
+}
+
+func TestRedact_LineNumbersDistinctAcrossManyOccurrences(t *testing.T) {
+	f := New()
+	var b strings.Builder
+	b.WriteString("<?php\n")
+	for i := 0; i < 10; i++ {
+		b.WriteString(`$api_key = "samekey_abcdefghij";` + "\n")
+	}
+	_, matches := f.Redact(b.String())
+
+	if len(matches) != 10 {
+		t.Fatalf("expected 10 matches, got %d", len(matches))
+	}
+	seen := make(map[int]bool)
+	for _, m := range matches {
+		seen[m.Line] = true
+	}
+	if len(seen) != 10 {
+		t.Errorf("expected 10 distinct line numbers, got %d: %+v", len(seen), seen)
+	}
+}

@@ -20,6 +20,7 @@ import (
 	"github.com/sec-scan-ai/client/internal/ignore"
 	"github.com/sec-scan-ai/client/internal/output"
 	"github.com/sec-scan-ai/client/internal/setup"
+	"github.com/sec-scan-ai/client/internal/updatecheck"
 	"github.com/spf13/cobra"
 )
 
@@ -46,6 +47,11 @@ func NewRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Best-effort daily update check. Silent failures; at most one
+			// GitHub API hit per 24h. Skipped on dev builds, in CI, and when
+			// SEC_SCAN_NO_UPDATE_CHECK is set.
+			updatecheck.MaybeAutoUpdate(Version)
+
 			cfg.Path = args[0]
 
 			// Handle --force-check alias
@@ -183,10 +189,13 @@ func runScan(cfg *config.Config) int {
 	}
 
 	if ignorePath != "" {
-		ignored, err := ignore.Load(ignorePath)
+		ignored, warnings, err := ignore.Load(ignorePath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: cannot read ignore file: %v\n", err)
 			return 1
+		}
+		for _, w := range warnings {
+			output.Progress(cfg.Quiet, "Warning: %s", w)
 		}
 		if len(ignored) > 0 {
 			output.Progress(cfg.Quiet, "Ignore list: %s (%d checksums)", ignorePath, len(ignored))

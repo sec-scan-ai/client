@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0 # need tags for `git describe` in make build
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
+
+      - name: make build (verify ldflags apply)
+        # Catches the class of bug where the ldflags -X path doesn't match
+        # the actual module path - the linker silently ignores it and
+        # Version stays "dev", which disables auto-update on local builds.
+        run: |
+          make build
+          VERSION=$(./sec-scan --version)
+          echo "Reported: $VERSION"
+          if echo "$VERSION" | grep -q "version dev "; then
+            echo "::error::Makefile ldflags are not being applied - Version is still 'dev'."
+            echo "Check that the -X path in LDFLAGS matches the module path in go.mod."
+            exit 1
+          fi
