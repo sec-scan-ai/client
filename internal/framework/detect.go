@@ -80,6 +80,21 @@ func matchFramework(packages map[string]string, projectName string) string {
 		return "Laravel"
 	}
 
+	// Sylius (checked before Symfony - Sylius depends on symfony/framework-bundle)
+	if ver, ok := packages["sylius/sylius"]; ok {
+		v := strings.TrimLeft(ver, "^~>=< v")
+		if strings.HasPrefix(v, "2") {
+			return "Sylius 2.x"
+		}
+		if strings.HasPrefix(v, "1") {
+			return "Sylius 1.x"
+		}
+		return "Sylius"
+	}
+	if projectName == "sylius/sylius" {
+		return "Sylius"
+	}
+
 	// Symfony
 	if _, ok := packages["symfony/framework-bundle"]; ok {
 		return "Symfony"
@@ -115,11 +130,6 @@ func matchFramework(packages map[string]string, projectName string) string {
 	// PrestaShop
 	if _, ok := packages["prestashop/prestashop"]; ok {
 		return "PrestaShop"
-	}
-
-	// Sylius
-	if _, ok := packages["sylius/sylius"]; ok {
-		return "Sylius"
 	}
 
 	// Named project fallback (only from composer.json, not lock files)

@@ -123,8 +123,23 @@ func TestDetect_Frameworks(t *testing.T) {
 			want:     "PrestaShop",
 		},
 		{
-			name:     "Sylius",
+			name:     "Sylius 1.x",
 			composer: `{"require": {"sylius/sylius": "^1.12"}}`,
+			want:     "Sylius 1.x",
+		},
+		{
+			name:     "Sylius 2.x",
+			composer: `{"require": {"sylius/sylius": "^2.2.5"}}`,
+			want:     "Sylius 2.x",
+		},
+		{
+			name:     "Sylius wins over Symfony",
+			composer: `{"require": {"sylius/sylius": "^2.0", "symfony/framework-bundle": "^7.0"}}`,
+			want:     "Sylius 2.x",
+		},
+		{
+			name:     "Sylius monorepo via project name",
+			composer: `{"name": "sylius/sylius", "require": {"symfony/framework-bundle": "^7.0"}}`,
 			want:     "Sylius",
 		},
 		{

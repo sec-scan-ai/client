@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.3
+
+### Sylius detection
+
+Sylius shops are now correctly identified, split into `Sylius 1.x` and `Sylius 2.x` based on the `sylius/sylius` package version. Previously these installs were misidentified as `Symfony` because Sylius depends on `symfony/framework-bundle`, which was matched first. The Sylius monorepo (source checkout) is also detected via the composer.json `name` field, matching how Shopware monorepos are handled.
+
 ## v0.7.2
 
 ### Fix Shopware 6 monorepo detected as Shopware 5
