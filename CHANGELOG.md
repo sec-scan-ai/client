@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.8.1
+
+### Fix: live risk counter missed cache-hit findings
+
+The "Analyzing [N/M, X critical, ...]" progress line and the final summary's risk suffix now include insecure/warning findings resolved from the lookup cache, not just freshly-analyzed files. Previously, a scan where most files came back from cache would show a much lower in-progress count than the final report. The final `BuildSummary` was already correct - only the live display was off.
+
 ## v0.8.0
 
 ### Daily auto-update

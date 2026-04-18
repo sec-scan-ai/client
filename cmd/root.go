@@ -341,6 +341,15 @@ func runScan(cfg *config.Config) int {
 		var progress *output.ProgressSpinner
 		if !cfg.Quiet {
 			progress = output.NewProgressSpinner(len(toAnalyze))
+			// Seed risk counters with cache-hit findings so the live counter
+			// reflects all insecure files, not just freshly-analyzed ones.
+			for _, v := range results {
+				if v.Secure == "no" {
+					progress.IncrementRisk(v.Risk)
+				} else if v.Secure == "warning" {
+					progress.IncrementWarning()
+				}
+			}
 		}
 
 		// Trap Ctrl+C: stop dispatching new requests, wait for in-flight ones
